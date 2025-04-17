@@ -2,10 +2,13 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+from torchmetrics import Accuracy
 import numpy as np
-from typing import Dict
+from typing import Dict, Tuple
 
 NER_TRAIN = r"./ner/train"
+NER_DEV = r"./ner/dev"
+NER_TEST = r"./ner/test"
 POS_TRAIN = r"./pos/train"
 VOCAB = r"./embeddings/vocab.txt"
 WORD_VECTORS = r"./embeddings/wordVectors.txt"
@@ -18,25 +21,25 @@ NER_labels = {
     "O": 4,
 }
 
+
 def load_embeddings(VOCAB_FILE_PATH: str, WORD_VECTORS_FILE_PATH: str) -> Dict[str, torch.Tensor]:
     embeddings = {}
 
-    with open(VOCAB_FILE_PATH, "r", encoding="utf-8") as vocab, open(WORD_VECTORS_FILE_PATH, "r", encoding="utf-8") as wordVectors:
+    with open(VOCAB_FILE_PATH, "r", encoding="utf-8") as vocab, open(WORD_VECTORS_FILE_PATH, "r",
+                                                                     encoding="utf-8") as wordVectors:
         for word, vector in zip(vocab.readlines(), wordVectors.readlines()):
             embeddings[word.replace("\n", "")] = torch.from_numpy(np.fromstring(vector.replace(" \n", ""), sep=" "))
 
-    embeddings["<pad>"] = torch.zeros(50, dtype=torch.float64)
+    embeddings["<pad>"] = torch.stack(list(embeddings.values()), dim=1).mean(dim=1)
 
     return embeddings
 
 
-def arrange_ner_training_data(ner_raw_train_data: [[str, str]], embeddings: Dict[str, torch.Tensor]) -> [(str, torch.Tensor), [torch.Tensor]]:
+def arrange_ner_data(ner_raw_data: [[str, str]], embeddings: Dict[str, torch.Tensor]) -> [(str, torch.Tensor),
+                                                                                          [torch.Tensor]]:
     ner_training_data = []
-    # labels = torch.empty(0, dtype=torch.int64)
-    # ner_training_data_words_embeddings = torch.empty(0, dtype=torch.float64)
 
-
-    for [label, words] in ner_raw_train_data:
+    for [label, words] in ner_raw_data:
         embedded_words = torch.empty(0, dtype=torch.float64)
         for word in words:
             if word.lower() in embeddings:
@@ -46,30 +49,9 @@ def arrange_ner_training_data(ner_raw_train_data: [[str, str]], embeddings: Dict
                 embedded_words = torch.cat((embedded_words, embeddings["<pad>"]), dim=0)
                 # embedded_words.append(embeddings["<pad>"])
 
-        # ner_training_data_words_embeddings = torch.cat((ner_training_data_words_embeddings, embedded_words), dim=0)
-        # labels = torch.cat((labels, torch.tensor([NER_labels[label]])), dim=0)
         ner_training_data.append((words[2], torch.tensor(NER_labels[label]), embedded_words))
 
-    # return ner_training_data, ner_training_data_words_embeddings, labels
     return ner_training_data
-
-
-class NER(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-        self.w00 = nn.Parameter(torch.randn((250,5), dtype=torch.float64), requires_grad=True)
-        self.b00 = nn.Parameter(torch.randn((5), dtype=torch.float64), requires_grad=True)
-
-    def forward(self, input):
-        input_to_tanh = torch.matmul(input, self.w00) + self.b00
-        tanh_output = F.tanh(input_to_tanh)
-
-        output = tanh_output
-        # TODO: remove:
-        # output = F.softmax(tanh_output, dim=1)
-
-        return output
 
 
 def parse_ner_file(filepath):
@@ -112,12 +94,27 @@ def parse_ner_file(filepath):
     return result
 
 
-def train(model: nn.Module, train_data, labels):
+class NER(nn.Module):
+    def __init__(self):
+        super().__init__()
 
-    optimizer = optim.Adam(model.parameters(), lr=0.1)
+        self.w00 = nn.Parameter(torch.randn((250, 5), dtype=torch.float64), requires_grad=True)
+        self.b00 = nn.Parameter(torch.randn((5), dtype=torch.float64), requires_grad=True)
+
+    def forward(self, input):
+        input_to_tanh = torch.matmul(input, self.w00) + self.b00
+        tanh_output = F.tanh(input_to_tanh)
+
+        output = tanh_output
+
+        return output
+
+
+def train(model: nn.Module, train_data, labels, epochs: int = 100, lr: int = 0.01):
+    optimizer = optim.Adam(model.parameters(), lr=lr)
     criterion = nn.CrossEntropyLoss()
 
-    for epoch in range(100):
+    for epoch in range(epochs):
         optimizer.zero_grad()
         output = model(train_data)
         loss = criterion(output, labels)
@@ -128,14 +125,50 @@ def train(model: nn.Module, train_data, labels):
             print(f"Epoch {epoch}: Loss = {loss.item():.4f}")
 
 
+torch.manual_seed(42)
+
 embeddings = load_embeddings(VOCAB, WORD_VECTORS)
 ner_raw_train_data = parse_ner_file(NER_TRAIN)
+ner_raw_dev_data = parse_ner_file(NER_DEV)
 
-ner_train_data_organized = arrange_ner_training_data(ner_raw_train_data, embeddings)
+ner_train_data_organized = arrange_ner_data(ner_raw_train_data, embeddings)
+ner_dev_data_organized = arrange_ner_data(ner_raw_dev_data, embeddings)
 
-context_embeddings = torch.stack([context_embedding[2] for context_embedding in ner_train_data_organized], dim=0)
-labels = torch.stack([context_embedding[1] for context_embedding in ner_train_data_organized], dim=0)
+train_context_embeddings = torch.stack(
+    [train_organized_sample[2] for train_organized_sample in ner_train_data_organized], dim=0)
+train_labels = torch.stack([train_organized_sample[1] for train_organized_sample in ner_train_data_organized], dim=0)
+train_words = [train_organized_sample[0] for train_organized_sample in ner_train_data_organized]
+
+dev_context_embeddings = torch.stack([dev_organized_sample[2] for dev_organized_sample in ner_dev_data_organized],
+                                     dim=0)
+dev_labels = torch.stack([dev_organized_sample[1] for dev_organized_sample in ner_dev_data_organized], dim=0)
+dev_words = [dev_organized_sample[0] for dev_organized_sample in ner_dev_data_organized]
 
 model = NER()
 
-train(model, context_embeddings, labels)
+train(model, train_context_embeddings, train_labels)
+
+raw_predictions = model(dev_context_embeddings)
+probabilities = F.softmax(raw_predictions, dim=1)
+predictions = torch.argmax(probabilities, dim=1)
+print(predictions.shape, dev_labels.shape)
+
+accuracy = Accuracy(task='multiclass', num_classes=5)
+accuracy.update(predictions, dev_labels)
+print(accuracy.compute())
+
+
+def remove_correct_class_o(true_labels: torch.Tensor, pred_labels: torch.Tensor, o_class_number) -> Tuple[
+    torch.Tensor, torch.Tensor]:
+    correct_class_o_mask = (true_labels == o_class_number) & (pred_labels == o_class_number)
+    keep_mask = ~correct_class_o_mask
+    return true_labels[keep_mask], pred_labels[keep_mask]
+
+
+predictions, dev_labels = remove_correct_class_o(predictions, dev_labels, NER_labels["O"])
+
+print(predictions.shape, dev_labels.shape)
+
+accuracy = Accuracy(task='multiclass', num_classes=5)
+accuracy.update(predictions, dev_labels)
+print(accuracy.compute())
