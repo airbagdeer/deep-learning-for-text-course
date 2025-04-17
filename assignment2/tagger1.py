@@ -42,16 +42,16 @@ class NER(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.w00 = nn.Parameter(torch.randn((5,50), dtype=torch.float64), requires_grad=True)
-        self.b00 = nn.Parameter(torch.randn((5,1), dtype=torch.float64), requires_grad=True)
+        self.w00 = nn.Parameter(torch.randn((50,5), dtype=torch.float64), requires_grad=True)
+        self.b00 = nn.Parameter(torch.randn((5), dtype=torch.float64), requires_grad=True)
 
     def forward(self, input):
-        input_to_tanh = torch.matmul(self.w00, input) + self.b00
+        input_to_tanh = torch.matmul(input, self.w00) + self.b00
         tanh_output = F.tanh(input_to_tanh)
 
         output = tanh_output
         # TODO: remove:
-        # output = F.softmax(tanh_output, dim=0)
+        # output = F.softmax(tanh_output, dim=1)
 
         return output
 
@@ -66,7 +66,7 @@ def arrange_ner_training_data(ner_labels: Dict[str, str], embeddings: Dict[str, 
             train_embeddings_in_order.append(embeddings[word])
             labels_in_order.append(label)
 
-    return train_embeddings_in_order, labels_in_order
+    return torch.stack(train_embeddings_in_order, dim=0), torch.tensor(labels_in_order)
 
 
 embeddings = load_embeddings(VOCAB, WORD_VECTORS)
@@ -77,33 +77,14 @@ ner_train_data, labels = arrange_ner_training_data(ner_raw_train_data, embedding
 model = NER()
 
 optimizer = optim.Adam(model.parameters(), lr=0.1)
-loss = nn.CrossEntropyLoss()
+criterion = nn.CrossEntropyLoss()
 
-# model(torch.randn(50, 50, dtype=torch.float64))
-# model(embeddings["hello"])
+for epoch in range(100):
+    optimizer.zero_grad()
+    output = model(ner_train_data)
+    loss = criterion(output, labels)
+    loss.backward()
+    optimizer.step()
 
-print(torch.cat((embeddings["hello"], embeddings["world"]), dim=0).shape)
-
-# for epoch in range(100):
-#     total_loss = 0
-#
-#     output = model(ner_train_data)
-#
-#
-#     # for iteration in range(len(ner_train_data)):
-#     #     input_i = ner_train_data[iteration]
-#     #     labels_i = labels[iteration]
-#     #
-#     #     output_i = model(input_i)
-#     #     print(output_i)
-#     #
-#     #     loss = F.cross_entropy(output_i, labels_i)
-#     #     # loss = (output_i - labels_i).pow(2)
-#     #
-#     #     loss.backward()
-#     #
-#     #     total_loss += float(loss)
-#
-#     optimizer.step()
-#     optimizer.zero_grad()
-#     print(f"epoch {epoch}, loss: {total_loss}, weight: {model.w00.data}, bias: {model.b00.data}")
+    if epoch % 10 == 0:
+        print(f"Epoch {epoch}: Loss = {loss.item():.4f}")
