@@ -103,9 +103,8 @@ class NER(nn.Module):
 
     def forward(self, input):
         input_to_tanh = torch.matmul(input, self.w00) + self.b00
-        tanh_output = F.tanh(input_to_tanh)
 
-        output = tanh_output
+        output = F.tanh(input_to_tanh)
 
         return output
 
