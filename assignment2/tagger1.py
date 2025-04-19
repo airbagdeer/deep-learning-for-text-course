@@ -9,9 +9,21 @@ from typing import Dict, Tuple
 NER_TRAIN = r"./ner/train"
 NER_DEV = r"./ner/dev"
 NER_TEST = r"./ner/test"
+
 POS_TRAIN = r"./pos/train"
+POS_DEV = r"./pos/dev"
+POS_TEST = r"./pos/test"
+
+POS_PROCESSED_TRAIN_CONTEXT_EMBEDDINGS = r"./pos_processed/train_context_embeddings.pt"
+POS_PROCESSED_TRAIN_LABELS = r"./pos_processed/train_labels.pt"
+POS_PROCESSED_DEV_CONTEXT_EMBEDDINGS = r"./pos_processed/dev_context_embeddings.pt"
+POS_PROCESSED_DEV_LABELS = r"./pos_processed/dev_labels.pt"
+POS_PROCESSED_TEST_CONTEXT_EMBEDDINGS = r"./pos_processed/test_context_embeddings.pt"
+POS_PROCESSED_TEST_LABELS = r"./pos_processed/test_labels.pt"
+
 VOCAB = r"./embeddings/vocab.txt"
 WORD_VECTORS = r"./embeddings/wordVectors.txt"
+
 
 NER_labels = {
     "PER": 0,
@@ -69,7 +81,8 @@ def load_embeddings(VOCAB_FILE_PATH: str, WORD_VECTORS_FILE_PATH: str) -> Dict[s
         for word, vector in zip(vocab.readlines(), wordVectors.readlines()):
             embeddings[word.replace("\n", "")] = torch.from_numpy(np.fromstring(vector.replace(" \n", ""), sep=" "))
 
-    embeddings["<pad>"] = torch.stack(list(embeddings.values()), dim=1).mean(dim=1)
+    embeddings["<pad>"] = torch.zeros(len(list(embeddings.values())[0]), dtype=torch.float64)
+    embeddings["<unk>"] = torch.stack(list(embeddings.values()), dim=1).mean(dim=1)
 
     return embeddings
 
@@ -85,7 +98,7 @@ def arrange_data(raw_data: [[str, str]], embeddings: Dict[str, torch.Tensor], tr
             if word.lower() in embeddings:
                 embedded_words = torch.cat((embedded_words, embeddings[word.lower()]), dim=0)
             else:
-                embedded_words = torch.cat((embedded_words, embeddings["<pad>"]), dim=0)
+                embedded_words = torch.cat((embedded_words, embeddings["<unk>"]), dim=0)
 
         words_in_order.append(words[2])
         labels_in_order.append(torch.tensor(true_labels[label]))
@@ -191,9 +204,6 @@ def train(model: nn.Module, train_data, labels, epochs: int = 100, lr: int = 0.0
             print(f"Epoch {epoch}: Loss = {loss.item():.4f}")
 
 
-torch.manual_seed(42)
-embeddings = load_embeddings(VOCAB, WORD_VECTORS)
-
 def train_NER():
     ner_raw_train_data = parse_file(NER_TRAIN)
     ner_raw_dev_data = parse_file(NER_DEV)
@@ -210,7 +220,7 @@ def train_NER():
     predictions = torch.argmax(probabilities, dim=1)
     print(predictions.shape, dev_labels.shape)
 
-    accuracy = Accuracy(task='multiclass', num_classes=5)
+    accuracy = Accuracy(task='multiclass', num_classes=len(list(NER_labels.values())))
     accuracy.update(predictions, dev_labels)
     print(accuracy.compute())
 
@@ -226,12 +236,11 @@ def train_NER():
 
     print(predictions.shape, dev_labels.shape)
 
-    accuracy = Accuracy(task='multiclass', num_classes=5)
+    accuracy = Accuracy(task='multiclass', num_classes=len(list(NER_labels.values())))
     accuracy.update(predictions, dev_labels)
     print(accuracy.compute())
 
-
-def train_POS():
+def process_pos_data():
     def remove_punctuation(pos_train_data):
         return [item for item in pos_train_data if item[0] in POS_labels]
 
@@ -239,10 +248,23 @@ def train_POS():
     pos_train_data = remove_punctuation(pos_raw_train_data)
     train_words, train_labels, train_context_embeddings = arrange_data(pos_train_data, embeddings, POS_labels)
 
+    torch.save(train_context_embeddings, POS_PROCESSED_TRAIN_CONTEXT_EMBEDDINGS)
+    torch.save(train_labels, POS_PROCESSED_TRAIN_LABELS)
 
-    pos_raw_dev_data = parse_file(POS_TRAIN)
+    pos_raw_dev_data = parse_file(POS_DEV)
     pos_dev_data = remove_punctuation(pos_raw_dev_data)
     dev_words, dev_labels, dev_context_embeddings = arrange_data(pos_dev_data, embeddings, POS_labels)
+
+    torch.save(dev_context_embeddings, POS_PROCESSED_DEV_CONTEXT_EMBEDDINGS)
+    torch.save(dev_labels, POS_PROCESSED_DEV_LABELS)
+
+
+def train_POS():
+    train_labels = torch.load(POS_PROCESSED_TRAIN_LABELS)
+    train_context_embeddings = torch.load(POS_PROCESSED_TRAIN_CONTEXT_EMBEDDINGS)
+
+    dev_labels = torch.load(POS_PROCESSED_DEV_LABELS)
+    dev_context_embeddings = torch.load(POS_PROCESSED_DEV_CONTEXT_EMBEDDINGS)
 
     model = POS()
     train(model, train_context_embeddings, train_labels, epochs=100, lr=0.01)
@@ -252,8 +274,13 @@ def train_POS():
     predictions = torch.argmax(probabilities, dim=1)
     print(predictions.shape, dev_labels.shape)
 
-    accuracy = Accuracy(task='multiclass', num_classes=36)
+    accuracy = Accuracy(task='multiclass', num_classes=len(list(POS_labels.values())))
     accuracy.update(predictions, dev_labels)
     print(accuracy.compute())
 
+
+torch.manual_seed(42)
+embeddings = load_embeddings(VOCAB, WORD_VECTORS)
+
+# process_pos_data()
 train_POS()
