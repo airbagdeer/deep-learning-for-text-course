@@ -24,6 +24,12 @@ POS_PROCESSED_TEST_LABELS = r"./pos_processed/test_labels.pt"
 VOCAB = r"./embeddings/vocab.txt"
 WORD_VECTORS = r"./embeddings/wordVectors.txt"
 
+DTYPE = torch.float32
+
+torch_to_numpy_dtype = {
+    torch.float32: np.float32,
+    torch.float64: np.float64
+}
 
 NER_labels = {
     "PER": 0,
@@ -79,9 +85,10 @@ def load_embeddings(VOCAB_FILE_PATH: str, WORD_VECTORS_FILE_PATH: str) -> Dict[s
     with open(VOCAB_FILE_PATH, "r", encoding="utf-8") as vocab, open(WORD_VECTORS_FILE_PATH, "r",
                                                                      encoding="utf-8") as wordVectors:
         for word, vector in zip(vocab.readlines(), wordVectors.readlines()):
-            embeddings[word.replace("\n", "")] = torch.from_numpy(np.fromstring(vector.replace(" \n", ""), sep=" "))
+            embeddings[word.replace("\n", "")] = torch.from_numpy(
+                np.fromstring(vector.replace(" \n", ""), sep=" ", dtype=torch_to_numpy_dtype[DTYPE]))
 
-    embeddings["<pad>"] = torch.zeros(len(list(embeddings.values())[0]), dtype=torch.float64)
+    embeddings["<pad>"] = torch.zeros(len(list(embeddings.values())[0]), dtype=DTYPE)
     embeddings["<unk>"] = torch.stack(list(embeddings.values()), dim=1).mean(dim=1)
 
     return embeddings
@@ -93,7 +100,7 @@ def arrange_data(raw_data: [[str, str]], embeddings: Dict[str, torch.Tensor], tr
     context_embeddings = []
 
     for [label, words] in raw_data:
-        embedded_words = torch.empty(0, dtype=torch.float64)
+        embedded_words = torch.empty(0, dtype=DTYPE)
         for word in words:
             if word.lower() in embeddings:
                 embedded_words = torch.cat((embedded_words, embeddings[word.lower()]), dim=0)
@@ -101,7 +108,7 @@ def arrange_data(raw_data: [[str, str]], embeddings: Dict[str, torch.Tensor], tr
                 embedded_words = torch.cat((embedded_words, embeddings["<unk>"]), dim=0)
 
         words_in_order.append(words[2])
-        labels_in_order.append(torch.tensor(true_labels[label]))
+        labels_in_order.append(torch.tensor(true_labels[label], dtype=torch.long))
         context_embeddings.append(embedded_words)
 
     return words_in_order, torch.stack(labels_in_order, dim=0), torch.stack(context_embeddings, dim=0)
@@ -150,8 +157,8 @@ class NER(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.w00 = nn.Parameter(torch.randn((250, 5), dtype=torch.float64), requires_grad=True)
-        self.b00 = nn.Parameter(torch.randn((5), dtype=torch.float64), requires_grad=True)
+        self.w00 = nn.Parameter(torch.randn((250, 5), dtype=DTYPE), requires_grad=True)
+        self.b00 = nn.Parameter(torch.randn((5), dtype=DTYPE), requires_grad=True)
 
     def forward(self, input):
         input_to_tanh = torch.matmul(input, self.w00) + self.b00
@@ -160,27 +167,13 @@ class NER(nn.Module):
 
         return output
 
-
-class NER(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-        self.w00 = nn.Parameter(torch.randn((250, 5), dtype=torch.float64), requires_grad=True)
-        self.b00 = nn.Parameter(torch.randn((5), dtype=torch.float64), requires_grad=True)
-
-    def forward(self, input):
-        input_to_tanh = torch.matmul(input, self.w00) + self.b00
-
-        output = F.tanh(input_to_tanh)
-
-        return output
 
 class POS(nn.Module):
     def __init__(self):
         super().__init__()
 
-        self.w00 = nn.Parameter(torch.randn((250, 36), dtype=torch.float64), requires_grad=True)
-        self.b00 = nn.Parameter(torch.randn((36), dtype=torch.float64), requires_grad=True)
+        self.w00 = nn.Parameter(torch.randn((250, 36), dtype=DTYPE), requires_grad=True)
+        self.b00 = nn.Parameter(torch.randn((36), dtype=DTYPE), requires_grad=True)
 
     def forward(self, input):
         input_to_tanh = torch.matmul(input, self.w00) + self.b00
@@ -189,19 +182,29 @@ class POS(nn.Module):
 
         return output
 
-def train(model: nn.Module, train_data, labels, epochs: int = 100, lr: int = 0.01):
+
+def train(model: nn.Module, train_data, train_labels, dev_data, dev_labels, epochs: int = 100, lr: int = 0.01):
     optimizer = optim.Adam(model.parameters(), lr=lr)
     criterion = nn.CrossEntropyLoss()
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5)
+    accuracy = Accuracy(task='multiclass', num_classes=len(list(POS_labels.values())))
 
     for epoch in range(epochs):
         optimizer.zero_grad()
         output = model(train_data)
-        loss = criterion(output, labels)
+        loss = criterion(output, train_labels)
         loss.backward()
         optimizer.step()
 
-        if epoch % 10 == 0:
-            print(f"Epoch {epoch}: Loss = {loss.item():.4f}")
+
+        # TODO: something is fucked up here, for some reason the last accuracy in the model is not the same as
+        #  trying to predict the model in the train_pos function. Also, when printing in the train_pos function, the accuracy is a tensor.
+        #  understand why, this might be a bug.
+        accuracy.update(torch.argmax(F.softmax(model(dev_data), dim=1), dim=1), dev_labels)
+        scheduler.step(accuracy.compute())
+
+        if epoch % 10 == 0 or epoch == epochs - 1:
+            print(f"Epoch {epoch}: Loss = {loss.item():.4f}, Accuracy = {accuracy.compute():.4f}")
 
 
 def train_NER():
@@ -224,13 +227,11 @@ def train_NER():
     accuracy.update(predictions, dev_labels)
     print(accuracy.compute())
 
-
     def remove_correct_class_o(true_labels: torch.Tensor, pred_labels: torch.Tensor, o_class_number) -> Tuple[
         torch.Tensor, torch.Tensor]:
         correct_class_o_mask = (true_labels == o_class_number) & (pred_labels == o_class_number)
         keep_mask = ~correct_class_o_mask
         return true_labels[keep_mask], pred_labels[keep_mask]
-
 
     predictions, dev_labels = remove_correct_class_o(predictions, dev_labels, NER_labels["O"])
 
@@ -239,6 +240,7 @@ def train_NER():
     accuracy = Accuracy(task='multiclass', num_classes=len(list(NER_labels.values())))
     accuracy.update(predictions, dev_labels)
     print(accuracy.compute())
+
 
 def process_pos_data():
     def remove_punctuation(pos_train_data):
@@ -267,14 +269,17 @@ def train_POS():
     dev_context_embeddings = torch.load(POS_PROCESSED_DEV_CONTEXT_EMBEDDINGS)
 
     model = POS()
-    train(model, train_context_embeddings, train_labels, epochs=100, lr=0.01)
+
+    # TODO: add scheduler
+    train(model, train_context_embeddings, train_labels, dev_context_embeddings, dev_labels, epochs=100, lr=0.01)
+    # train(model, train_context_embeddings, train_labels, epochs=100, lr=0.01)
 
     raw_predictions = model(dev_context_embeddings)
     probabilities = F.softmax(raw_predictions, dim=1)
     predictions = torch.argmax(probabilities, dim=1)
-    print(predictions.shape, dev_labels.shape)
 
     accuracy = Accuracy(task='multiclass', num_classes=len(list(POS_labels.values())))
+
     accuracy.update(predictions, dev_labels)
     print(accuracy.compute())
 
