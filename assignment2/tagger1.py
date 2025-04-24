@@ -52,6 +52,45 @@ NER_labels = {
     "O": 4,
 }
 
+POS_labels = {
+    "CC": 0,
+    "CD": 1,
+    "DT": 2,
+    "EX": 3,
+    "FW": 4,
+    "IN": 5,
+    "JJ": 6,
+    "JJR": 7,
+    "JJS": 8,
+    "LS": 9,
+    "MD": 10,
+    "NN": 11,
+    "NNS": 12,
+    "NNP": 13,
+    "NNPS": 14,
+    "PDT": 15,
+    "POS": 16,
+    "PRP": 17,
+    "PRP$": 18,
+    "RB": 19,
+    "RBR": 20,
+    "RBS": 21,
+    "RP": 22,
+    "SYM": 23,
+    "TO": 24,
+    "UH": 25,
+    "VB": 26,
+    "VBD": 27,
+    "VBG": 28,
+    "VBN": 29,
+    "VBP": 30,
+    "VBZ": 31,
+    "WDT": 32,
+    "WP": 33,
+    "WP$": 34,
+    "WRB": 35
+}
+
 
 def load_pretrained_embeddings(VOCAB_FILE_PATH: str, WORD_VECTORS_FILE_PATH: str) -> Dict[str, torch.Tensor]:
     embeddings = {}
