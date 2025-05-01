@@ -3,9 +3,9 @@ from typing import Dict
 
 import torch
 
-from ner import train_NER
-from pos import train_POS, process_pos_data
-from utils import DTYPE, POS_TRAIN, POS_DEV, NER_TRAIN, NER_DEV
+from ner import train_NER, evaluate_ner_file_with_context
+from pos import train_POS, process_pos_data, evaluate_pos_file_with_context
+from utils import DTYPE, POS_TRAIN, POS_DEV, NER_TRAIN, NER_DEV, NER_TEST, POS_TEST
 
 NER_MODEL = r"./ner-processed/q1-model.pt"
 
@@ -21,8 +21,30 @@ POS_PROCESSED_DEV_LABELS = r"./pos_processed/dev_labels.pt"
 POS_PROCESSED_TEST_LABELS = r"./pos_processed/test_labels.pt"
 Q1_POS_MODEL = r"./pos_processed/q1-model.pt"
 
-def load_pos_random_embeddings(TRAIN_FILE, embeddings_size = 50) -> Dict[str, torch.Tensor]:
+def load_ner_one_hot_words(TRAIN_FILE):
     embeddings = {}
+    embeddings["<pad>"] = 0
+    embeddings["<unk>"] = 1
+    amount_of_words = 2
+
+    with open(TRAIN_FILE, "r", encoding="utf-8") as train:
+        for line in train.readlines():
+            words = line.split("\t")
+            actual_word = words[0].lower()
+            if actual_word != "\n" and actual_word != "\t" and actual_word != "\r" and actual_word != " ":
+                if actual_word not in embeddings:
+                    embeddings[actual_word] = amount_of_words
+                    amount_of_words += 1
+
+
+    return embeddings, amount_of_words
+
+
+def load_pos_one_hot_embeddings(TRAIN_FILE):
+    embeddings = {}
+    embeddings["<pad>"] = 0
+    embeddings["<unk>"] = 1
+    amount_of_words = 2
 
     def is_punctuation(s):
         return all(char in string.punctuation for char in s) and bool(s)
@@ -33,39 +55,21 @@ def load_pos_random_embeddings(TRAIN_FILE, embeddings_size = 50) -> Dict[str, to
             actual_word = words[0].lower()
             if not is_punctuation(actual_word) and actual_word != "\n" and actual_word != "\t" and actual_word != "\r" and actual_word != " ":
                 if actual_word not in embeddings:
-                    embeddings[actual_word] = torch.randn(embeddings_size, dtype=DTYPE)
+                    embeddings[actual_word] = amount_of_words
+                    amount_of_words += 1
 
-    embeddings["<pad>"] = torch.zeros(len(list(embeddings.values())[0]), dtype=DTYPE)
-    embeddings["<unk>"] = torch.stack(list(embeddings.values()), dim=1).mean(dim=1)
 
-    return embeddings
-
-def load_ner_random_embeddings(TRAIN_FILE, embeddings_size = 50) -> Dict[str, torch.Tensor]:
-    embeddings = {}
-
-    with open(TRAIN_FILE, "r", encoding="utf-8") as train:
-        for line in train.readlines():
-            words = line.split("\t")
-            actual_word = words[0].lower()
-            if actual_word != "\n" and actual_word != "\t" and actual_word != "\r" and actual_word != " ":
-                if actual_word not in embeddings:
-                    embeddings[actual_word] = torch.randn(embeddings_size, dtype=DTYPE)
-
-    embeddings["<pad>"] = torch.zeros(len(list(embeddings.values())[0]), dtype=DTYPE)
-    embeddings["<unk>"] = torch.stack(list(embeddings.values()), dim=1).mean(dim=1)
-
-    return embeddings
-
+    return embeddings, amount_of_words
 
 torch.manual_seed(42)
 
-# pos_random_embeddings = load_pos_random_embeddings(POS_TRAIN)
-# process_pos_data(pos_random_embeddings, POS_TRAIN, POS_PROCESSED_TRAIN_CONTEXT_EMBEDDINGS, POS_PROCESSED_TRAIN_LABELS, POS_DEV, POS_PROCESSED_DEV_CONTEXT_EMBEDDINGS, POS_PROCESSED_DEV_LABELS, save_labels=True)
+# ner_one_hot_embeddings, vocab_size = load_ner_one_hot_words(NER_TRAIN)
+# ner_trained_model = train_NER(ner_one_hot_embeddings, NER_TRAIN, NER_DEV, vocab_size)
+# evaluate_ner_file_with_context(ner_trained_model, NER_TEST, ner_one_hot_embeddings, "test1.ner")
 
-# train_POS(POS_PROCESSED_TRAIN_CONTEXT_EMBEDDINGS, POS_PROCESSED_TRAIN_LABELS, POS_PROCESSED_DEV_CONTEXT_EMBEDDINGS, POS_PROCESSED_DEV_LABELS)
+# ner_random_embeddings = load_ner_random_embeddings(NER_TRAIN)
+# train_NER(ner_random_embeddings, NER_TRAIN, NER_DEV)
 
-
-# TODO: add batch size 128/256, look at torch DataLoader.
-# TODO: each batch should have examples from not only the o class if possible
-ner_random_embeddings = load_ner_random_embeddings(NER_TRAIN)
-train_NER(ner_random_embeddings, NER_TRAIN, NER_DEV)
+pos_one_hot_embeddings, vocab_size = load_pos_one_hot_embeddings(POS_TRAIN)
+pos_trained_model = train_POS(POS_TRAIN, POS_DEV, pos_one_hot_embeddings, vocab_size)
+evaluate_pos_file_with_context(pos_trained_model, POS_TEST, pos_one_hot_embeddings, "test1.pos")
