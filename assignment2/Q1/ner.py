@@ -155,7 +155,7 @@ def train(model: nn.Module, epochs: int, lr: float = 0.0001, num_of_labels: int 
         # scheduler.step(current_accuracy_without_o)
         train_loss = sum(total_train_loss) / len(total_train_loss)
         # if epoch % 10 == 0 or epoch == epochs - 1:
-        print(f"Epoch {epoch}: Train Loss = {train_loss:.4f}, Dev Loss = {dev_loss:.4f}, Accuracy without o\'s = {current_accuracy_without_o:.4f}, Accuracy with o\'s = {current_accuracy:.4f}")
+        print(f"Epoch {epoch}: Train Loss = {train_loss:.4f}, Dev Loss = {dev_loss:.4f}, Dev Accuracy without o\'s = {current_accuracy_without_o:.4f}, Train Accuracy with o\'s = {np.mean(total_train_loss):.4f}")
 
         if epoch > 5 and history['dev_loss'][epoch-5] < dev_loss:
             early_stopping_counter += 1
@@ -217,8 +217,8 @@ def plot(data, title):
     plt.xlabel('Epoch')
     plt.ylabel(title)
     plt.grid(True)
-    plt.show()
     plt.savefig("./images/" + title + ".png")
+    plt.show()
 
 def evaluate_test_file(model, TEST_DATA, one_hot_words):
     model.eval()

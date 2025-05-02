@@ -121,7 +121,7 @@ class POS(nn.Module):
         return output_layer_output
 
 
-def train(model: nn.Module, epochs: int, lr: float = 0.001, num_of_labels: int = None, train_dataloader = None, dev_dataloader = None):
+def train(model: nn.Module, epochs: int, lr: float = 0.0001, num_of_labels: int = None, train_dataloader = None, dev_dataloader = None):
     history = {
         'dev_loss': [],
         'dev_accuracy': [],
@@ -232,8 +232,8 @@ def plot(data, title):
     plt.xlabel('Epoch')
     plt.ylabel(title)
     plt.grid(True)
-    plt.show()
     plt.savefig("./images/" + title + ".png")
+    plt.show()
 
 def arrange_data(raw_data: [[str, str]], embeddings: Dict[str, torch.Tensor], true_labels: Dict[str, int]):
     words_in_order = []

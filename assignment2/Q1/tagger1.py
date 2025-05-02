@@ -7,20 +7,6 @@ from ner import train_NER, evaluate_ner_file_with_context
 from pos import train_POS, process_pos_data, evaluate_pos_file_with_context
 from utils import DTYPE, POS_TRAIN, POS_DEV, NER_TRAIN, NER_DEV, NER_TEST, POS_TEST
 
-NER_MODEL = r"./ner-processed/q1-model.pt"
-
-POS_PROCESSED_TRAIN_CONTEXT_EMBEDDINGS = r"./pos_processed/train_context_embeddings.pt"
-POS_PROCESSED_DEV_CONTEXT_EMBEDDINGS = r"./pos_processed/dev_context_embeddings.pt"
-POS_PROCESSED_TEST_CONTEXT_EMBEDDINGS = r"./pos_processed/test_context_embeddings.pt"
-
-
-POS_PROCESSED_TRAIN_CONTEXT_RANDOM_EMBEDDINGS = r"./pos_processed/train_context_random_embeddings.pt"
-POS_PROCESSED_TRAIN_LABELS = r"./pos_processed/train_labels.pt"
-POS_PROCESSED_DEV_CONTEXT_RANDOM_EMBEDDINGS = r"./pos_processed/dev_context_random_embeddings.pt"
-POS_PROCESSED_DEV_LABELS = r"./pos_processed/dev_labels.pt"
-POS_PROCESSED_TEST_LABELS = r"./pos_processed/test_labels.pt"
-Q1_POS_MODEL = r"./pos_processed/q1-model.pt"
-
 def load_ner_one_hot_words(TRAIN_FILE):
     embeddings = {}
     embeddings["<pad>"] = 0
@@ -67,11 +53,8 @@ ner_one_hot_embeddings, vocab_size = load_ner_one_hot_words(NER_TRAIN)
 ner_trained_model = train_NER(ner_one_hot_embeddings, NER_TRAIN, NER_DEV, vocab_size)
 evaluate_ner_file_with_context(ner_trained_model, NER_TEST, ner_one_hot_embeddings, "test1.ner")
 
-# ner_random_embeddings = load_ner_random_embeddings(NER_TRAIN)
-# train_NER(ner_random_embeddings, NER_TRAIN, NER_DEV)
-
 # TODO: Move everything to a Q1 folder, Arrange Q2 folder, and create Q3 folder, tagger3 already exists.
 # TODO: Use AI Chat (you have a free trial dont waste it)
-# pos_one_hot_embeddings, vocab_size = load_pos_one_hot_embeddings(POS_TRAIN)
-# pos_trained_model = train_POS(POS_TRAIN, POS_DEV, pos_one_hot_embeddings, vocab_size)
-# evaluate_pos_file_with_context(pos_trained_model, POS_TEST, pos_one_hot_embeddings, "test1.pos")
+pos_one_hot_embeddings, vocab_size = load_pos_one_hot_embeddings(POS_TRAIN)
+pos_trained_model = train_POS(POS_TRAIN, POS_DEV, pos_one_hot_embeddings, vocab_size)
+evaluate_pos_file_with_context(pos_trained_model, POS_TEST, pos_one_hot_embeddings, "test1.pos")
