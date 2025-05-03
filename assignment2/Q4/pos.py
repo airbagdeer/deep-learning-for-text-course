@@ -96,9 +96,12 @@ def parse_file(filepath):
     return result
 
 class POS(nn.Module):
-    def __init__(self, embedding_matrix, amount_of_prefix, amount_of_suffix):
+    def __init__(self, embedding_matrix, amount_of_prefix, amount_of_suffix, is_using_pretrained, vocab_size):
         super().__init__()
-        self.pretrained_embeddings = nn.Embedding.from_pretrained(embedding_matrix, freeze=False, padding_idx=0)
+        if is_using_pretrained:
+            self.word_embeddings = nn.Embedding.from_pretrained(embedding_matrix, freeze=False, padding_idx=0)
+        else:
+            self.word_embeddings = nn.Embedding(num_embeddings=vocab_size, embedding_dim=50, padding_idx=0)
         self.prefix_embeddings = nn.Embedding(num_embeddings=amount_of_prefix, embedding_dim=50, padding_idx=0)
         self.suffix_embeddings = nn.Embedding(num_embeddings=amount_of_suffix, embedding_dim=50, padding_idx=0)
 
@@ -117,7 +120,7 @@ class POS(nn.Module):
             prefix_ids = input[:, :, 1]
             suffix_ids = input[:, :, 2]
 
-            word_embeds = self.pretrained_embeddings(word_ids)
+            word_embeds = self.word_embeddings(word_ids)
             prefix_embeds = self.prefix_embeddings(prefix_ids)
             suffix_embeds = self.suffix_embeddings(suffix_ids)
 
@@ -129,7 +132,7 @@ class POS(nn.Module):
             prefix_ids = input[:, 1]
             suffix_ids = input[:, 2]
 
-            word_embeds = self.pretrained_embeddings(word_ids)
+            word_embeds = self.word_embeddings(word_ids)
             prefix_embeds = self.prefix_embeddings(prefix_ids)
             suffix_embeds = self.suffix_embeddings(suffix_ids)
 
@@ -201,7 +204,7 @@ def train(model: nn.Module, epochs: int, lr: float = 0.0001, num_of_labels: int 
         else:
             early_stopping_counter = 0
 
-        if early_stopping_counter >= 5:
+        if early_stopping_counter >= 10:
             break
 
 
@@ -209,7 +212,7 @@ def train(model: nn.Module, epochs: int, lr: float = 0.0001, num_of_labels: int 
 
 
 
-def train_POS(TRAIN_DATA, DEV_DATA, one_hot_embeddings, vocab_size, embedding_matrix, prefix_embeddings, prefix_amount_of_words, suffix_embeddings, suffix_amount_of_words):
+def train_POS(TRAIN_DATA, DEV_DATA, one_hot_embeddings, vocab_size, embedding_matrix, prefix_embeddings, prefix_amount_of_words, suffix_embeddings, suffix_amount_of_words, is_using_pretrained=None):
     pos_raw_train_data = parse_file(TRAIN_DATA)
     train_words, train_labels, train_context_embeddings = arrange_data(pos_raw_train_data, one_hot_embeddings, POS_labels_to_one_hot, prefix_embeddings, suffix_embeddings)
 
@@ -222,7 +225,7 @@ def train_POS(TRAIN_DATA, DEV_DATA, one_hot_embeddings, vocab_size, embedding_ma
     dev_dataset = TensorDataset(dev_context_embeddings, dev_labels)
     dev_data = DataLoader(dev_dataset, batch_size=128, shuffle=True)
 
-    model = POS(embedding_matrix, prefix_amount_of_words, suffix_amount_of_words)
+    model = POS(embedding_matrix, prefix_amount_of_words, suffix_amount_of_words, is_using_pretrained, vocab_size)
 
     history = train(model, epochs=100, num_of_labels=len(list(POS_labels_to_one_hot.values())), train_dataloader=train_data, dev_dataloader=dev_data)
 
@@ -306,12 +309,9 @@ def arrange_data(raw_data: [[str, str]], embeddings: Dict[str, int], true_labels
 
     return words_in_order, torch.stack(labels_in_order, dim=0), torch.stack(context_embeddings, dim=0)
 
-def evaluate_pos_file_with_context(model, filepath, one_hot_encoding, output_path):
+def evaluate_pos_file_with_context(model, filepath, one_hot_encoding, output_path, prefix_embeddings=None, suffix_embeddings=None):
     PAD = one_hot_encoding.get('<pad>')
     UNK = one_hot_encoding.get('<unk>')
-
-    def encode(word):
-        return one_hot_encoding.get(word, UNK)
 
     with open(filepath, 'r', encoding='utf-8') as f:
         lines = f.readlines()
@@ -327,17 +327,54 @@ def evaluate_pos_file_with_context(model, filepath, one_hot_encoding, output_pat
                 for i in range(2, len(padded) - 2):
                     if not is_punctuation(padded[i]):
                         window = padded[i - 2:i + 3]
-                        encoded_window = torch.tensor([encode(w) for w in window])
+                        
+                        embedded_window = []
+                        for w in window:
+                            embedded_word = []
+                            if w in one_hot_encoding:
+                                word_embedding = one_hot_encoding[w]
+                            else:
+                                word_embedding = one_hot_encoding["<unk>"]
+                            embedded_word.append(word_embedding)
+                            
+                            if prefix_embeddings is not None and suffix_embeddings is not None:
+                                if w != "<pad>":
+                                    if len(w) >= 3:
+                                        prefix = w[:3]
+                                        if prefix in prefix_embeddings:
+                                            prefix_embedding = prefix_embeddings[prefix]
+                                        else:
+                                            prefix_embedding = prefix_embeddings["<unk>"]
+                                        embedded_word.append(prefix_embedding)
+                                        
+                                        suffix = w[-3:]
+                                        if suffix in suffix_embeddings:
+                                            suffix_embedding = suffix_embeddings[suffix]
+                                        else:
+                                            suffix_embedding = suffix_embeddings["<unk>"]
+                                        embedded_word.append(suffix_embedding)
+                                    else:
+                                        embedded_word.append(prefix_embeddings["<short>"])
+                                        embedded_word.append(suffix_embeddings["<short>"])
+                                else:
+                                    embedded_word.append(prefix_embeddings["<pad>"])
+                                    embedded_word.append(suffix_embeddings["<pad>"])
+                            
+                            embedded_window.append(embedded_word)
+                        
+                        encoded_window = torch.tensor(embedded_window)
+                        
                         raw_prediction = model(encoded_window)
                         probabilities = F.softmax(raw_prediction, dim=0)
                         prediction = torch.argmax(probabilities, dim=0)
+                        
                         output_lines.append(f"{padded[i]} {POS_one_hot_to_label[prediction.item()]}")
                     else:
                         output_lines.append(f"{padded[i]} {padded[i]}")
                 sentence = []
             output_lines.append(word)
         else:
-            word=word.lower()
+            word = word.lower()
             sentence.append(word)
 
     if sentence:
@@ -345,11 +382,47 @@ def evaluate_pos_file_with_context(model, filepath, one_hot_encoding, output_pat
         for i in range(2, len(padded) - 2):
             if not is_punctuation(padded[i]):
                 window = padded[i - 2:i + 3]
-                encoded_window = torch.tensor([encode(w) for w in window])
+                
+                embedded_window = []
+                for w in window:
+                    embedded_word = []
+                    if w in one_hot_encoding:
+                        word_embedding = one_hot_encoding[w]
+                    else:
+                        word_embedding = one_hot_encoding["<unk>"]
+                    embedded_word.append(word_embedding)
+                    
+                    if prefix_embeddings is not None and suffix_embeddings is not None:
+                        if w != "<pad>":
+                            if len(w) >= 3:
+                                prefix = w[:3]
+                                if prefix in prefix_embeddings:
+                                    prefix_embedding = prefix_embeddings[prefix]
+                                else:
+                                    prefix_embedding = prefix_embeddings["<unk>"]
+                                embedded_word.append(prefix_embedding)
+                                
+                                suffix = w[-3:]
+                                if suffix in suffix_embeddings:
+                                    suffix_embedding = suffix_embeddings[suffix]
+                                else:
+                                    suffix_embedding = suffix_embeddings["<unk>"]
+                                embedded_word.append(suffix_embedding)
+                            else:
+                                embedded_word.append(prefix_embeddings["<short>"])
+                                embedded_word.append(suffix_embeddings["<short>"])
+                        else:
+                            embedded_word.append(prefix_embeddings["<pad>"])
+                            embedded_word.append(suffix_embeddings["<pad>"])
+                    
+                    embedded_window.append(embedded_word)
+                
+                encoded_window = torch.tensor(embedded_window)
+                
                 raw_prediction = model(encoded_window)
                 probabilities = F.softmax(raw_prediction, dim=0)
-                prediction = torch.argmax(probabilities,dim=0)
-
+                prediction = torch.argmax(probabilities, dim=0)
+                
                 output_lines.append(f"{padded[i]} {POS_one_hot_to_label[prediction.item()]}")
 
     with open(output_path, 'w', encoding='utf-8') as out:

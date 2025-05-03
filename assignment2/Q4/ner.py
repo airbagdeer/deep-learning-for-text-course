@@ -108,17 +108,20 @@ def parse_file(filepath):
 
 
 class NER(nn.Module):
-    def __init__(self, embedding_matrix, amount_of_prefix, amount_of_suffix):
+    def __init__(self, embedding_matrix, amount_of_prefix, amount_of_suffix, is_using_pretrained, vocab_size=None):
         super().__init__()
 
-        self.pretrained_embeddings = nn.Embedding.from_pretrained(embedding_matrix, freeze=False, padding_idx=0)
+        if is_using_pretrained:
+            self.word_embeddings = nn.Embedding.from_pretrained(embedding_matrix, freeze=False, padding_idx=0)
+        else:
+            self.word_embeddings = nn.Embedding(num_embeddings=vocab_size, embedding_dim=50, padding_idx=0)
         self.prefix_embeddings = nn.Embedding(num_embeddings=amount_of_prefix, embedding_dim=50, padding_idx=0)
         self.suffix_embeddings = nn.Embedding(num_embeddings=amount_of_suffix, embedding_dim=50, padding_idx=0)
 
         self.fc1=nn.Linear(in_features=250, out_features=100, bias=True)
         self.output_layer = nn.Linear(in_features=100, out_features=5, bias=True)
 
-        self.dropout = nn.Dropout(0.3)
+        self.dropout = nn.Dropout(0.4)
 
         nn.init.xavier_uniform_(self.fc1.weight)
         nn.init.xavier_uniform_(self.output_layer.weight)
@@ -130,7 +133,7 @@ class NER(nn.Module):
             prefix_ids = input[:, :, 1]
             suffix_ids = input[:, :, 2]
 
-            word_embeds = self.pretrained_embeddings(word_ids)
+            word_embeds = self.word_embeddings(word_ids)
             prefix_embeds = self.prefix_embeddings(prefix_ids)
             suffix_embeds = self.suffix_embeddings(suffix_ids)
 
@@ -142,7 +145,7 @@ class NER(nn.Module):
             prefix_ids = input[:, 1]
             suffix_ids = input[:, 2]
 
-            word_embeds = self.pretrained_embeddings(word_ids)
+            word_embeds = self.word_embeddings(word_ids)
             prefix_embeds = self.prefix_embeddings(prefix_ids)
             suffix_embeds = self.suffix_embeddings(suffix_ids)
 
@@ -224,7 +227,7 @@ def train(model: nn.Module, epochs: int, lr: float = 0.0001, num_of_labels: int 
         else:
             early_stopping_counter = 0
 
-        if early_stopping_counter >= 8:
+        if early_stopping_counter >= 10:
             break
 
 
@@ -236,7 +239,7 @@ def remove_correct_class_o(true_labels: torch.Tensor, pred_labels: torch.Tensor,
     keep_mask = ~correct_class_o_mask
     return true_labels[keep_mask], pred_labels[keep_mask]
 
-def train_NER(word_to_index, TRAIN_DATA, DEV_DATA, vocab_size, embedding_matrix, prefix_embeddings=None, prefix_amount_of_words=None, suffix_embeddings=None, suffix_amount_of_words=None):
+def train_NER(word_to_index, TRAIN_DATA, DEV_DATA, vocab_size, embedding_matrix=None, prefix_embeddings=None, prefix_amount_of_words=None, suffix_embeddings=None, suffix_amount_of_words=None, is_using_pretrained=None):
     ner_raw_train_data = parse_file(TRAIN_DATA)
     ner_raw_dev_data = parse_file(DEV_DATA)
 
@@ -249,7 +252,7 @@ def train_NER(word_to_index, TRAIN_DATA, DEV_DATA, vocab_size, embedding_matrix,
     dev_dataset = TensorDataset(dev_context_embeddings, dev_labels)
     dev_data = DataLoader(dev_dataset, batch_size=128, shuffle=True)
 
-    model = NER(embedding_matrix, prefix_amount_of_words, suffix_amount_of_words)
+    model = NER(embedding_matrix, prefix_amount_of_words, suffix_amount_of_words, is_using_pretrained, vocab_size)
 
     history = train(model, epochs=100, num_of_labels=len(list(NER_labels_to_one_hot.values())), train_dataloader=train_data, dev_dataloader=dev_data)
 
@@ -300,12 +303,43 @@ def evaluate_test_file(model, TEST_DATA, one_hot_words):
     predictions = torch.argmax(probabilities, dim=1)
 
 
-def evaluate_ner_file_with_context(model, filepath, one_hot_encoding, output_path):
+def evaluate_ner_file_with_context(model, filepath, one_hot_encoding, output_path, prefix_embeddings=None, suffix_embeddings=None):
     PAD = one_hot_encoding.get('<pad>')
     UNK = one_hot_encoding.get('<unk>')
 
-    def encode(word):
-        return one_hot_encoding.get(word, UNK)
+    def encode_word_with_affix(word):
+        encoded = []
+        
+        if word in one_hot_encoding:
+            word_embedding = one_hot_encoding[word]
+        else:
+            word_embedding = one_hot_encoding["<unk>"]
+        encoded.append(word_embedding)
+        
+        if prefix_embeddings is not None and suffix_embeddings is not None:
+            if word != "<pad>":
+                if len(word) >= 3:
+                    prefix = word[:3]
+                    if prefix in prefix_embeddings:
+                        prefix_embedding = prefix_embeddings[prefix]
+                    else:
+                        prefix_embedding = prefix_embeddings["<unk>"]
+                    encoded.append(prefix_embedding)
+                    
+                    suffix = word[-3:]
+                    if suffix in suffix_embeddings:
+                        suffix_embedding = suffix_embeddings[suffix]
+                    else:
+                        suffix_embedding = suffix_embeddings["<unk>"]
+                    encoded.append(suffix_embedding)
+                else:
+                    encoded.append(prefix_embeddings["<short>"])
+                    encoded.append(suffix_embeddings["<short>"])
+            else:
+                encoded.append(prefix_embeddings["<pad>"])
+                encoded.append(suffix_embeddings["<pad>"])
+        
+        return encoded
 
     with open(filepath, 'r', encoding='utf-8') as f:
         lines = f.readlines()
@@ -320,26 +354,39 @@ def evaluate_ner_file_with_context(model, filepath, one_hot_encoding, output_pat
                 padded = ['<pad>', '<pad>'] + sentence + ['<pad>', '<pad>']
                 for i in range(2, len(padded) - 2):
                     window = padded[i - 2:i + 3]
-                    encoded_window = torch.tensor([encode(w) for w in window])
-                    raw_prediction = model(encoded_window)
+                    
+                    encoded_window = []
+                    for w in window:
+                        encoded_window.append(encode_word_with_affix(w.lower()))
+                    
+                    encoded_tensor = torch.tensor(encoded_window)
+                    
+                    raw_prediction = model(encoded_tensor)
                     probabilities = F.softmax(raw_prediction, dim=0)
                     prediction = torch.argmax(probabilities, dim=0)
+                    
                     output_lines.append(f"{padded[i]}\t{NER_one_hot_to_label[prediction.item()]}")
                 sentence = []
             output_lines.append(word)
         else:
-            word=word.lower()
+            word = word.lower()
             sentence.append(word)
 
     if sentence:
         padded = ['<pad>', '<pad>'] + sentence + ['<pad>', '<pad>']
         for i in range(2, len(padded) - 2):
             window = padded[i - 2:i + 3]
-            encoded_window = torch.tensor([encode(w) for w in window])
-            raw_prediction = model(encoded_window)
+            
+            encoded_window = []
+            for w in window:
+                encoded_window.append(encode_word_with_affix(w.lower()))
+            
+            encoded_tensor = torch.tensor(encoded_window)
+            
+            raw_prediction = model(encoded_tensor)
             probabilities = F.softmax(raw_prediction, dim=0)
-            prediction = torch.argmax(probabilities,dim=0)
-
+            prediction = torch.argmax(probabilities, dim=0)
+            
             output_lines.append(f"{padded[i]}\t{NER_one_hot_to_label[prediction.item()]}")
 
     with open(output_path, 'w', encoding='utf-8') as out:

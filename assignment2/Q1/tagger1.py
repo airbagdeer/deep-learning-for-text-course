@@ -49,12 +49,10 @@ def load_pos_one_hot_embeddings(TRAIN_FILE):
 
 torch.manual_seed(42)
 
-ner_one_hot_embeddings, vocab_size = load_ner_one_hot_words(NER_TRAIN)
-ner_trained_model = train_NER(ner_one_hot_embeddings, NER_TRAIN, NER_DEV, vocab_size)
-evaluate_ner_file_with_context(ner_trained_model, NER_TEST, ner_one_hot_embeddings, "test1.ner")
+# ner_one_hot_embeddings, vocab_size = load_ner_one_hot_words(NER_TRAIN)
+# ner_trained_model = train_NER(ner_one_hot_embeddings, NER_TRAIN, NER_DEV, vocab_size)
+# evaluate_ner_file_with_context(ner_trained_model, NER_TEST, ner_one_hot_embeddings, "test1.ner")
 
-# TODO: Move everything to a Q1 folder, Arrange Q2 folder, and create Q3 folder, tagger3 already exists.
-# TODO: Use AI Chat (you have a free trial dont waste it)
-# pos_one_hot_embeddings, vocab_size = load_pos_one_hot_embeddings(POS_TRAIN)
-# pos_trained_model = train_POS(POS_TRAIN, POS_DEV, pos_one_hot_embeddings, vocab_size)
+pos_one_hot_embeddings, vocab_size = load_pos_one_hot_embeddings(POS_TRAIN)
+pos_trained_model = train_POS(POS_TRAIN, POS_DEV, pos_one_hot_embeddings, vocab_size)
 # evaluate_pos_file_with_context(pos_trained_model, POS_TEST, pos_one_hot_embeddings, "test1.pos")
