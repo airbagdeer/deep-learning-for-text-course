@@ -2,8 +2,8 @@ import numpy as np
 import torch
 from typing import Dict
 
-VOCAB = r"./embeddings/vocab.txt"
-WORD_VECTORS = r"./embeddings/wordVectors.txt"
+VOCAB = r"../embeddings/vocab.txt"
+WORD_VECTORS = r"../embeddings/wordVectors.txt"
 
 def load_pretrained_embeddings(VOCAB_FILE_PATH: str, WORD_VECTORS_FILE_PATH: str) -> Dict[str, torch.Tensor]:
     embeddings = {}

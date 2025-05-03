@@ -76,10 +76,10 @@ def parse_file(filepath):
 
 
 class NER(nn.Module):
-    def __init__(self):
+    def __init__(self, embedding_matrix):
         super().__init__()
 
-        self.embeddings = nn.Embedding(num_embeddings=21013, embedding_dim=50, padding_idx=0)
+        self.embeddings = nn.Embedding.from_pretrained(embedding_matrix, freeze=False, padding_idx=0)
 
         self.fc1=nn.Linear(in_features=250, out_features=100, bias=True)
         self.output_layer = nn.Linear(in_features=100, out_features=5, bias=True)
@@ -144,8 +144,12 @@ def train(model: nn.Module, epochs: int, lr: float = 0.0001, num_of_labels: int 
                 prediction = torch.argmax(F.softmax(dev_raw_output, dim=1), dim=1)
                 current_accuracy = accuracy(prediction, labels)
                 prediction_without_o, dev_labels_without_o = remove_correct_class_o(prediction, labels, NER_labels_to_one_hot["O"])
-                current_accuracy_without_o = accuracy(prediction_without_o, dev_labels_without_o)
-                total_dev_accuracy.append(current_accuracy_without_o)
+                if prediction_without_o.size(0) > 0:
+                    current_accuracy_without_o = accuracy(prediction_without_o, dev_labels_without_o)
+                    total_dev_accuracy.append(current_accuracy_without_o)
+                else:
+                    total_dev_accuracy.append(1.0)
+
                 total_dev_loss.append(dev_loss.item())
         model.train()
 
@@ -155,11 +159,9 @@ def train(model: nn.Module, epochs: int, lr: float = 0.0001, num_of_labels: int 
         history['dev_accuracy'].append(current_accuracy_without_o)
 
         # scheduler.step(current_accuracy_without_o)
-        # train_loss = sum(total_train_loss) / len(total_train_loss)
-        # if epoch % 10 == 0 or epoch == epochs - 1:
         print(f"Epoch {epoch}: Train Loss = {train_loss:.4f}, Dev Loss = {dev_loss:.4f}, Dev Accuracy without o\'s = {current_accuracy_without_o:.4f}, Train Accuracy with o\'s = {train_accuracy:.4f}")
 
-        if epoch > 5 and history['dev_loss'][epoch-5] < dev_loss:
+        if epoch > 5 and history['dev_loss'][epoch-2] < dev_loss:
             early_stopping_counter += 1
         else:
             early_stopping_counter = 0
@@ -176,12 +178,12 @@ def remove_correct_class_o(true_labels: torch.Tensor, pred_labels: torch.Tensor,
     keep_mask = ~correct_class_o_mask
     return true_labels[keep_mask], pred_labels[keep_mask]
 
-def train_NER(one_hot_embedding, TRAIN_DATA, DEV_DATA, vocab_size):
+def train_NER(word_to_index, TRAIN_DATA, DEV_DATA, vocab_size, embedding_matrix):
     ner_raw_train_data = parse_file(TRAIN_DATA)
     ner_raw_dev_data = parse_file(DEV_DATA)
 
-    train_words, train_labels, train_context_embeddings = arrange_data(ner_raw_train_data, one_hot_embedding, NER_labels_to_one_hot)
-    dev_words, dev_labels, dev_context_embeddings = arrange_data(ner_raw_dev_data, one_hot_embedding, NER_labels_to_one_hot)
+    train_words, train_labels, train_context_embeddings = arrange_data(ner_raw_train_data, word_to_index, NER_labels_to_one_hot)
+    dev_words, dev_labels, dev_context_embeddings = arrange_data(ner_raw_dev_data, word_to_index, NER_labels_to_one_hot)
 
     train_dataset = TensorDataset(train_context_embeddings, train_labels)
     train_data = DataLoader(train_dataset, batch_size=128, shuffle=True)
@@ -189,7 +191,7 @@ def train_NER(one_hot_embedding, TRAIN_DATA, DEV_DATA, vocab_size):
     dev_dataset = TensorDataset(dev_context_embeddings, dev_labels)
     dev_data = DataLoader(dev_dataset, batch_size=128, shuffle=True)
 
-    model = NER()
+    model = NER(embedding_matrix)
 
     history = train(model, epochs=100, num_of_labels=len(list(NER_labels_to_one_hot.values())), train_dataloader=train_data, dev_dataloader=dev_data)
 
@@ -285,4 +287,3 @@ def evaluate_ner_file_with_context(model, filepath, one_hot_encoding, output_pat
     with open(output_path, 'w', encoding='utf-8') as out:
         for line in output_lines:
             out.write(line + '\n')
-

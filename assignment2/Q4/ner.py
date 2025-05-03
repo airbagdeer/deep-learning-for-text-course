@@ -22,17 +22,49 @@ NER_labels_to_one_hot = {
 
 NER_one_hot_to_label = {v: k for k, v in NER_labels_to_one_hot.items()}
 
-def arrange_data(raw_data: [[str, str]], embeddings: Dict[str, int], true_labels: Dict[str, int] = None):
+def arrange_data(raw_data: [[str, str]], embeddings: Dict[str, int], true_labels: Dict[str, int] = None, prefix_embeddings=None, suffix_embeddings=None):
     words_in_order = []
     labels_in_order = []
     context_embeddings = []
-
     for [label, words] in raw_data:
-        embedded_words = torch.tensor([embeddings[word] if word in embeddings else embeddings["<unk>"] for word in words], dtype=torch.long)
+        embedded_words = []
+
+        for word in words:
+            embedded_word = []
+            if word in embeddings:
+                word_embedding = embeddings[word]
+            else:
+                word_embedding = embeddings["<unk>"]
+            embedded_word.append(word_embedding)
+
+            if word != "<pad>":
+                if len(word) >= 3:
+                    prefix = word[:3]
+                    if prefix in prefix_embeddings:
+                        prefix_embedding = prefix_embeddings[prefix]
+                    else:
+                        prefix_embedding = prefix_embeddings["<unk>"]
+                    embedded_word.append(prefix_embedding)
+
+                    suffix = word[-3:]
+                    if suffix in suffix_embeddings:
+                        suffix_embedding = suffix_embeddings[suffix]
+                    else:
+                        suffix_embedding = suffix_embeddings["<unk>"]
+                    embedded_word.append(suffix_embedding)
+                else:
+                    embedded_word.append(prefix_embeddings["<short>"])
+                    embedded_word.append(suffix_embeddings["<short>"])
+            else:
+                embedded_word.append(prefix_embeddings["<pad>"])
+                embedded_word.append(suffix_embeddings["<pad>"])
+
+            embedded_words.append(embedded_word)
+
         words_in_order.append(words[2])
         if true_labels:
             labels_in_order.append(torch.tensor(true_labels[label], dtype=torch.long))
-        context_embeddings.append(embedded_words)
+        context_embeddings.append(torch.tensor(embedded_words, dtype=torch.long))
 
     return words_in_order, torch.stack(labels_in_order, dim=0), torch.stack(context_embeddings, dim=0)
 
@@ -76,10 +108,12 @@ def parse_file(filepath):
 
 
 class NER(nn.Module):
-    def __init__(self):
+    def __init__(self, embedding_matrix, amount_of_prefix, amount_of_suffix):
         super().__init__()
 
-        self.embeddings = nn.Embedding(num_embeddings=21013, embedding_dim=50, padding_idx=0)
+        self.pretrained_embeddings = nn.Embedding.from_pretrained(embedding_matrix, freeze=False, padding_idx=0)
+        self.prefix_embeddings = nn.Embedding(num_embeddings=amount_of_prefix, embedding_dim=50, padding_idx=0)
+        self.suffix_embeddings = nn.Embedding(num_embeddings=amount_of_suffix, embedding_dim=50, padding_idx=0)
 
         self.fc1=nn.Linear(in_features=250, out_features=100, bias=True)
         self.output_layer = nn.Linear(in_features=100, out_features=5, bias=True)
@@ -91,12 +125,36 @@ class NER(nn.Module):
 
 
     def forward(self, input):
-        embedded = self.embeddings(input)
-        if embedded.dim()==3:
-            flattened = embedded.view(input.shape[0], -1)
+        if input.dim()==3:
+            word_ids = input[:, :, 0]
+            prefix_ids = input[:, :, 1]
+            suffix_ids = input[:, :, 2]
+
+            word_embeds = self.pretrained_embeddings(word_ids)
+            prefix_embeds = self.prefix_embeddings(prefix_ids)
+            suffix_embeds = self.suffix_embeddings(suffix_ids)
+
+            combined_embeds = word_embeds + prefix_embeds + suffix_embeds
+
+            combined = combined_embeds.view(input.size(0), -1)
         else:
-            flattened = embedded.view(-1)
-        hidden_layer_output = F.tanh(self.fc1(flattened))
+            word_ids = input[:, 0]
+            prefix_ids = input[:, 1]
+            suffix_ids = input[:, 2]
+
+            word_embeds = self.pretrained_embeddings(word_ids)
+            prefix_embeds = self.prefix_embeddings(prefix_ids)
+            suffix_embeds = self.suffix_embeddings(suffix_ids)
+
+            combined_embeds = word_embeds + prefix_embeds + suffix_embeds
+
+            combined = combined_embeds.view(-1)
+
+        # if embedded.dim()==3:
+        #     flattened = embedded.view(input.shape[0], -1)
+        # else:
+        #     flattened = embedded.view(-1)
+        hidden_layer_output = F.tanh(self.fc1(combined))
         hidden_layer_output = self.dropout(hidden_layer_output)
         output_layer_output = self.output_layer(hidden_layer_output)
 
@@ -144,8 +202,12 @@ def train(model: nn.Module, epochs: int, lr: float = 0.0001, num_of_labels: int 
                 prediction = torch.argmax(F.softmax(dev_raw_output, dim=1), dim=1)
                 current_accuracy = accuracy(prediction, labels)
                 prediction_without_o, dev_labels_without_o = remove_correct_class_o(prediction, labels, NER_labels_to_one_hot["O"])
-                current_accuracy_without_o = accuracy(prediction_without_o, dev_labels_without_o)
-                total_dev_accuracy.append(current_accuracy_without_o)
+                if prediction_without_o.size(0) > 0:
+                    current_accuracy_without_o = accuracy(prediction_without_o, dev_labels_without_o)
+                    total_dev_accuracy.append(current_accuracy_without_o)
+                else:
+                    total_dev_accuracy.append(1.0)
+
                 total_dev_loss.append(dev_loss.item())
         model.train()
 
@@ -155,16 +217,14 @@ def train(model: nn.Module, epochs: int, lr: float = 0.0001, num_of_labels: int 
         history['dev_accuracy'].append(current_accuracy_without_o)
 
         # scheduler.step(current_accuracy_without_o)
-        # train_loss = sum(total_train_loss) / len(total_train_loss)
-        # if epoch % 10 == 0 or epoch == epochs - 1:
         print(f"Epoch {epoch}: Train Loss = {train_loss:.4f}, Dev Loss = {dev_loss:.4f}, Dev Accuracy without o\'s = {current_accuracy_without_o:.4f}, Train Accuracy with o\'s = {train_accuracy:.4f}")
 
-        if epoch > 5 and history['dev_loss'][epoch-5] < dev_loss:
+        if epoch > 5 and history['dev_loss'][epoch-1] < dev_loss:
             early_stopping_counter += 1
         else:
             early_stopping_counter = 0
 
-        if early_stopping_counter >= 5:
+        if early_stopping_counter >= 8:
             break
 
 
@@ -176,12 +236,12 @@ def remove_correct_class_o(true_labels: torch.Tensor, pred_labels: torch.Tensor,
     keep_mask = ~correct_class_o_mask
     return true_labels[keep_mask], pred_labels[keep_mask]
 
-def train_NER(one_hot_embedding, TRAIN_DATA, DEV_DATA, vocab_size):
+def train_NER(word_to_index, TRAIN_DATA, DEV_DATA, vocab_size, embedding_matrix, prefix_embeddings, prefix_amount_of_words, suffix_embeddings, suffix_amount_of_words):
     ner_raw_train_data = parse_file(TRAIN_DATA)
     ner_raw_dev_data = parse_file(DEV_DATA)
 
-    train_words, train_labels, train_context_embeddings = arrange_data(ner_raw_train_data, one_hot_embedding, NER_labels_to_one_hot)
-    dev_words, dev_labels, dev_context_embeddings = arrange_data(ner_raw_dev_data, one_hot_embedding, NER_labels_to_one_hot)
+    train_words, train_labels, train_context_embeddings = arrange_data(ner_raw_train_data, word_to_index, NER_labels_to_one_hot, prefix_embeddings, suffix_embeddings)
+    dev_words, dev_labels, dev_context_embeddings = arrange_data(ner_raw_dev_data, word_to_index, NER_labels_to_one_hot, prefix_embeddings, suffix_embeddings)
 
     train_dataset = TensorDataset(train_context_embeddings, train_labels)
     train_data = DataLoader(train_dataset, batch_size=128, shuffle=True)
@@ -189,7 +249,7 @@ def train_NER(one_hot_embedding, TRAIN_DATA, DEV_DATA, vocab_size):
     dev_dataset = TensorDataset(dev_context_embeddings, dev_labels)
     dev_data = DataLoader(dev_dataset, batch_size=128, shuffle=True)
 
-    model = NER()
+    model = NER(embedding_matrix, prefix_amount_of_words, suffix_amount_of_words)
 
     history = train(model, epochs=100, num_of_labels=len(list(NER_labels_to_one_hot.values())), train_dataloader=train_data, dev_dataloader=dev_data)
 
@@ -215,7 +275,7 @@ def train_NER(one_hot_embedding, TRAIN_DATA, DEV_DATA, vocab_size):
 
 def plot(data, title):
     plt.plot(data, marker='o')
-    plt.title(f'{title}')
+    plt.title(f'{title}, Final: {data[-1]:.4f}')
     plt.xlabel('Epoch')
     plt.ylabel(title)
     plt.grid(True)
@@ -285,4 +345,3 @@ def evaluate_ner_file_with_context(model, filepath, one_hot_encoding, output_pat
     with open(output_path, 'w', encoding='utf-8') as out:
         for line in output_lines:
             out.write(line + '\n')
-
