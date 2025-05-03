@@ -236,7 +236,7 @@ def remove_correct_class_o(true_labels: torch.Tensor, pred_labels: torch.Tensor,
     keep_mask = ~correct_class_o_mask
     return true_labels[keep_mask], pred_labels[keep_mask]
 
-def train_NER(word_to_index, TRAIN_DATA, DEV_DATA, vocab_size, embedding_matrix, prefix_embeddings, prefix_amount_of_words, suffix_embeddings, suffix_amount_of_words):
+def train_NER(word_to_index, TRAIN_DATA, DEV_DATA, vocab_size, embedding_matrix, prefix_embeddings=None, prefix_amount_of_words=None, suffix_embeddings=None, suffix_amount_of_words=None):
     ner_raw_train_data = parse_file(TRAIN_DATA)
     ner_raw_dev_data = parse_file(DEV_DATA)
 
