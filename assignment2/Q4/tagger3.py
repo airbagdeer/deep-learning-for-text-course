@@ -148,16 +148,11 @@ pos_prefix_embeddings, pos_prefix_amount_of_words, pos_suffix_embeddings, pos_su
 # Using pretrained embeddings:
 # TODO: Incremented dropout to 0.4 and early stoping bar to 10.
 ner_trained_model_using_pretrained = train_NER(word_to_index_pretrained, NER_TRAIN, NER_DEV, vocab_size, embedding_matrix, ner_prefix_embeddings, ner_prefix_amount_of_words, ner_suffix_embeddings, ner_suffix_amount_of_words)
-try:
-    evaluate_ner_file_with_context(ner_trained_model_using_pretrained, NER_TEST, word_to_index_pretrained, "test4.ner", ner_prefix_embeddings, ner_suffix_embeddings)
-except:
-    pass
+evaluate_ner_file_with_context(ner_trained_model_using_pretrained, NER_TEST, word_to_index_pretrained, "test4.ner", ner_prefix_embeddings, ner_suffix_embeddings)
+
 
 pos_trained_model_using_pretrained = train_POS(POS_TRAIN, POS_DEV, word_to_index_pretrained, vocab_size, embedding_matrix, pos_prefix_embeddings, pos_prefix_amount_of_words, pos_suffix_embeddings, pos_suffix_amount_of_words)
-try:
-    evaluate_pos_file_with_context(pos_trained_model_using_pretrained, POS_TEST, word_to_index_pretrained, "test4.pos", pos_prefix_embeddings, pos_suffix_embeddings)
-except:
-    pass
+evaluate_pos_file_with_context(pos_trained_model_using_pretrained, POS_TEST, word_to_index_pretrained, "test4.pos", pos_prefix_embeddings, pos_suffix_embeddings)
 
 # Using non pretrained embeddings:
 # ner_one_hot_embeddings, vocab_size = load_ner_one_hot_words(NER_TRAIN)
