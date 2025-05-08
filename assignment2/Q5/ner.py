@@ -97,11 +97,11 @@ def parse_file(filepath):
 
 
 class NER(nn.Module):
-    def __init__(self, embedding_matrix, char_vocab_size, max_word_size):
+    def __init__(self, embedding_matrix, char_vocab_size, max_word_size, window_size):
         super().__init__()
 
         chars_embeddings_size = 32
-        out_channels = 30
+        out_channels = window_size
 
         self.embeddings = nn.Embedding.from_pretrained(embedding_matrix, freeze=True, padding_idx=0)
         self.char_embeddings = nn.Embedding(char_vocab_size, chars_embeddings_size, padding_idx=0)
@@ -119,52 +119,43 @@ class NER(nn.Module):
     def forward(self, input):
         batch_size = input.shape[0]
 
-        # Create a tensor to store the concatenated word and character embeddings
         concatenated_features = []
 
-        # Process each example in the batch
         for example_idx in range(batch_size):
             example_features = []
-            example = input[example_idx]  # Shape [5, 71]
+            example = input[example_idx]
 
-            # Process each word in the example
             for word_idx in range(5):
-                word = example[word_idx]  # Shape [71]
+                word = example[word_idx]
 
-                # Get word embedding from index 0
-                word_embedding = self.embeddings(word[0])  # Shape [50]
+                word_embedding = self.embeddings(word[0])
 
-                # Get character embeddings for the rest of the indices (1-70)
-                chars = word[1:]  # Shape [70]
-                char_embeddings = self.char_embeddings(chars)  # Shape [70, 64]
-                # Prepare for conv1d: [64, 70]
+                chars = word[1:]
+                char_embeddings = self.char_embeddings(chars)
+
                 char_embeddings = char_embeddings.transpose(0, 1)
 
-                # Apply 1D convolution: Shape [62, 68]
                 conv_output = self.char_conv(char_embeddings.unsqueeze(0)).squeeze(0)
-                # Apply max pooling across the dimension
-                max_pooled, _ = torch.max(conv_output, dim=1)  # Shape [62]
-                # Concatenate word embedding and max pooled character features
-                combined = torch.cat([word_embedding, max_pooled], dim=0)  # Shape [112]
+
+                max_pooled, _ = torch.max(conv_output, dim=1)
+
+                combined = torch.cat([word_embedding, max_pooled], dim=0)
                 example_features.append(combined)
 
-            # Stack features for this example
-            example_tensor = torch.stack(example_features)  # Shape [5, 112]
+            example_tensor = torch.stack(example_features)
             concatenated_features.append(example_tensor)
 
-        # Stack all examples
-        all_features = torch.stack(concatenated_features)  # Shape [batch_size, 5, 112]
+        all_features = torch.stack(concatenated_features)
 
-        # Flatten for the fully connected layer
-        flattened = all_features.view(batch_size, -1)  # Shape [batch_size, 560]
+        flattened = all_features.view(batch_size, -1)
 
-        # Pass through hidden layer
         hidden_layer_output = F.tanh(self.fc1(flattened))
         hidden_layer_output = self.dropout(hidden_layer_output)
-        # Pass through output layer
+
         output_layer_output = self.output_layer(hidden_layer_output)
 
         return output_layer_output
+
 def train(model: nn.Module, epochs: int, lr: float = 0.0001, num_of_labels: int = None, train_dataloader=None, dev_dataloader=None):
     history = {
         'dev_loss': [],
@@ -241,7 +232,7 @@ def remove_correct_class_o(true_labels: torch.Tensor, pred_labels: torch.Tensor,
     keep_mask = ~correct_class_o_mask
     return true_labels[keep_mask], pred_labels[keep_mask]
 
-def train_NER(word_to_index, TRAIN_DATA, DEV_DATA, vocab_size, embedding_matrix, char_to_index, char_vocab_size, max_word_size):
+def train_NER(word_to_index, TRAIN_DATA, DEV_DATA, vocab_size, embedding_matrix, char_to_index, char_vocab_size, max_word_size, window_size):
     ner_raw_train_data = parse_file(TRAIN_DATA)
     ner_raw_dev_data = parse_file(DEV_DATA)
 
@@ -256,7 +247,7 @@ def train_NER(word_to_index, TRAIN_DATA, DEV_DATA, vocab_size, embedding_matrix,
     dev_dataset = TensorDataset(dev_context_embeddings, dev_labels)
     dev_data = DataLoader(dev_dataset, batch_size=batch_size, shuffle=True)
 
-    model = NER(embedding_matrix, char_vocab_size, max_word_size)
+    model = NER(embedding_matrix, char_vocab_size, max_word_size, window_size)
 
     history = train(model, epochs=100, num_of_labels=len(list(NER_labels_to_one_hot.values())), train_dataloader=train_data, dev_dataloader=dev_data)
 
@@ -273,20 +264,20 @@ def train_NER(word_to_index, TRAIN_DATA, DEV_DATA, vocab_size, embedding_matrix,
     accuracy = Accuracy(task='multiclass', num_classes=len(list(NER_labels_to_one_hot.values())))
     print('accuracy after remove_correct_class_o',accuracy(predictions, dev_labels))
 
-    plot(history['dev_accuracy'], 'NER Dev Accuracy without Os')
-    plot(history['train_accuracy'], 'NER Train Accuracy')
-    plot(history['dev_loss'], 'NER Dev Loss')
-    plot(history['train_loss'], 'NER Train Loss')
+    plot(history['dev_accuracy'], 'NER Dev Accuracy without Os', window_size)
+    plot(history['train_accuracy'], 'NER Train Accuracy', window_size)
+    plot(history['dev_loss'], 'NER Dev Loss', window_size)
+    plot(history['train_loss'], 'NER Train Loss', window_size)
 
     return model
 
-def plot(data, title):
+def plot(data, title, window_size):
     plt.plot(data, marker='o')
-    plt.title(f'{title}')
+    plt.title(f'{title}, Final: {data[-1]:.4f}')
     plt.xlabel('Epoch')
     plt.ylabel(title)
     plt.grid(True)
-    plt.savefig("./images/" + title + ".png")
+    plt.savefig("./images/" + title + "_" + str(window_size) + ".png")
     plt.show()
 
 def evaluate_test_file(model, TEST_DATA, one_hot_words):
@@ -307,12 +298,19 @@ def evaluate_test_file(model, TEST_DATA, one_hot_words):
     predictions = torch.argmax(probabilities, dim=1)
 
 
-def evaluate_ner_file_with_context(model, filepath, one_hot_encoding, output_path):
-    PAD = one_hot_encoding.get('<pad>')
-    UNK = one_hot_encoding.get('<unk>')
+def evaluate_ner_file_with_context(model, filepath, word_to_index, char_to_index, max_word_length, output_path):
+    PAD_WORD = word_to_index.get('<pad>', 0)
+    UNK_WORD = word_to_index.get('<unk>', 1)
+    PAD_CHAR = char_to_index.get('<pad>', 0)
+    UNK_CHAR = char_to_index.get('<unk>', 1)
 
-    def encode(word):
-        return one_hot_encoding.get(word, UNK)
+    NER_one_hot_to_label = {
+        0: 'O',
+        1: 'PER',
+        2: 'ORG',
+        3: 'LOC',
+        4: 'MISC'
+    }
 
     with open(filepath, 'r', encoding='utf-8') as f:
         lines = f.readlines()
@@ -321,34 +319,115 @@ def evaluate_ner_file_with_context(model, filepath, one_hot_encoding, output_pat
     sentence = []
 
     for line in lines:
-        word = line.strip()
-        if word == '' or word == '-DOCSTART-':
+        line = line.strip()
+        if line == '' or line.startswith('-DOCSTART-'):
             if sentence:
                 padded = ['<pad>', '<pad>'] + sentence + ['<pad>', '<pad>']
                 for i in range(2, len(padded) - 2):
+                    # Create a context window of size 5
                     window = padded[i - 2:i + 3]
-                    encoded_window = torch.tensor([encode(w) for w in window])
-                    raw_prediction = model(encoded_window)
-                    probabilities = F.softmax(raw_prediction, dim=0)
-                    prediction = torch.argmax(probabilities, dim=0)
-                    output_lines.append(f"{padded[i]}\t{NER_one_hot_to_label[prediction.item()]}")
+
+                    # Create embedded representation with word and character features
+                    embedded_window = []
+                    for word in window:
+                        # Word embedding
+                        word_idx = word_to_index.get(word, UNK_WORD)
+
+                        # Character embeddings
+                        char_indices = []
+                        if word == "<pad>":
+                            char_indices = [PAD_CHAR] * max_word_length
+                        else:
+                            for char in word:
+                                if char in char_to_index:
+                                    char_indices.append(char_to_index[char])
+                                else:
+                                    char_indices.append(UNK_CHAR)
+
+                            # Pad or truncate to max_word_length
+                            if len(char_indices) > max_word_length:
+                                char_indices = char_indices[:max_word_length]
+                            elif len(char_indices) < max_word_length:
+                                char_indices = char_indices + [PAD_CHAR] * (max_word_length - len(char_indices))
+
+                        # Combine word and character features
+                        embedded_word = [word_idx] + char_indices
+                        embedded_window.append(embedded_word)
+
+                    # Convert to tensor and add batch dimension
+                    input_tensor = torch.tensor(embedded_window, dtype=torch.long).unsqueeze(0)
+
+                    # Get model prediction
+                    with torch.no_grad():
+                        raw_prediction = model(input_tensor)
+                        probabilities = torch.softmax(raw_prediction, dim=1)
+                        prediction = torch.argmax(probabilities, dim=1).item()
+
+                    # Add to output
+                    original_word = padded[i]
+                    output_lines.append(f"{original_word}\t{NER_one_hot_to_label[prediction]}")
+
+                # End of sentence
+                output_lines.append("")
                 sentence = []
-            output_lines.append(word)
+
+            # Add empty line or DOCSTART marker
+            if line:
+                output_lines.append(line)
+                output_lines.append("")
         else:
-            word=word.lower()
+            # Just store the word (first part before tab if it exists)
+            word = line.split('\t')[0] if '\t' in line else line
             sentence.append(word)
 
+    # Process any remaining sentence
     if sentence:
         padded = ['<pad>', '<pad>'] + sentence + ['<pad>', '<pad>']
         for i in range(2, len(padded) - 2):
+            # Create a context window of size 5
             window = padded[i - 2:i + 3]
-            encoded_window = torch.tensor([encode(w) for w in window])
-            raw_prediction = model(encoded_window)
-            probabilities = F.softmax(raw_prediction, dim=0)
-            prediction = torch.argmax(probabilities,dim=0)
 
-            output_lines.append(f"{padded[i]}\t{NER_one_hot_to_label[prediction.item()]}")
+            # Create embedded representation with word and character features
+            embedded_window = []
+            for word in window:
+                # Word embedding
+                word_idx = word_to_index.get(word, UNK_WORD)
 
+                # Character embeddings
+                char_indices = []
+                if word == "<pad>":
+                    char_indices = [PAD_CHAR] * max_word_length
+                else:
+                    for char in word:
+                        if char in char_to_index:
+                            char_indices.append(char_to_index[char])
+                        else:
+                            char_indices.append(UNK_CHAR)
+
+                    # Pad or truncate to max_word_length
+                    if len(char_indices) > max_word_length:
+                        char_indices = char_indices[:max_word_length]
+                    elif len(char_indices) < max_word_length:
+                        char_indices = char_indices + [PAD_CHAR] * (max_word_length - len(char_indices))
+
+                # Combine word and character features
+                embedded_word = [word_idx] + char_indices
+                embedded_window.append(embedded_word)
+
+            # Convert to tensor and add batch dimension
+            input_tensor = torch.tensor(embedded_window, dtype=torch.long).unsqueeze(0)
+
+            # Get model prediction
+            with torch.no_grad():
+                raw_prediction = model(input_tensor)
+                probabilities = torch.softmax(raw_prediction, dim=1)
+                prediction = torch.argmax(probabilities, dim=1).item()
+
+            # Add to output
+            original_word = padded[i]
+            output_lines.append(f"{original_word}\t{NER_one_hot_to_label[prediction]}")
+
+    # Write output file
     with open(output_path, 'w', encoding='utf-8') as out:
         for line in output_lines:
             out.write(line + '\n')

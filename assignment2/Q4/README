@@ -1,0 +1,7 @@
+Simply run
+
+```bash
+python tagger3.py
+```
+
+This will train the best NER model, output test4.ner, then train the best POS model, and output test4.pos
