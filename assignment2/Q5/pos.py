@@ -158,6 +158,9 @@ class POS(nn.Module):
 
 
 def train(model: nn.Module, epochs: int, lr: float = 0.0001, num_of_labels: int = None, train_dataloader = None, dev_dataloader = None):
+    device = torch.device("cuda")
+    model = model.to(device)
+
     history = {
         'dev_loss': [],
         'dev_accuracy': [],

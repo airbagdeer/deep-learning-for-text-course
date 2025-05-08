@@ -68,29 +68,27 @@ char_to_index_pos, num_chars_pos = create_char_dictionary(POS_TRAIN)
 torch.manual_seed(42)
 max_word_size = 70
 
-# TODO: NER is working, do the evaluate function.
-
 ner_trained_model = train_NER(word_to_index, NER_TRAIN, NER_DEV, vocab_size, embedding_matrix, char_to_index_ner, num_chars_ner, max_word_size, 30)
 torch.save(ner_trained_model, "ner_trained_model_window_size_30.pt")
-evaluate_ner_file_with_context(ner_trained_model, NER_TEST, word_to_index, char_to_index_ner, max_word_size, "test4_30.ner")
+evaluate_ner_file_with_context(ner_trained_model, NER_TEST, word_to_index, char_to_index_ner, max_word_size, "test5_30.ner")
 
 pos_trained_model = train_POS(POS_TRAIN, POS_DEV, word_to_index, vocab_size, embedding_matrix, char_to_index_pos, num_chars_pos, max_word_size, 30)
 torch.save(pos_trained_model, "pos_trained_model_window_size_30.pt")
-evaluate_pos_file_with_context(pos_trained_model, POS_TEST, word_to_index, char_to_index_pos, max_word_size, "test4_30.pos")
+evaluate_pos_file_with_context(pos_trained_model, POS_TEST, word_to_index, char_to_index_pos, max_word_size, "test5_30.pos")
 
-ner_trained_model = train_NER(word_to_index, NER_TRAIN, NER_DEV, vocab_size, embedding_matrix, char_to_index_ner, num_chars_ner, max_word_size, 40)
-torch.save(ner_trained_model, "ner_trained_model_window_size_40.pt")
-evaluate_ner_file_with_context(ner_trained_model, NER_TEST, word_to_index, char_to_index_ner, max_word_size, "test4_40.ner")
+# ner_trained_model = train_NER(word_to_index, NER_TRAIN, NER_DEV, vocab_size, embedding_matrix, char_to_index_ner, num_chars_ner, max_word_size, 40)
+# torch.save(ner_trained_model, "ner_trained_model_window_size_40.pt")
+# evaluate_ner_file_with_context(ner_trained_model, NER_TEST, word_to_index, char_to_index_ner, max_word_size, "test5_40.ner")
+#
+# pos_trained_model = train_POS(POS_TRAIN, POS_DEV, word_to_index, vocab_size, embedding_matrix, char_to_index_pos, num_chars_pos, max_word_size, 40)
+# torch.save(pos_trained_model, "pos_trained_model_window_size_40.pt")
+# evaluate_pos_file_with_context(pos_trained_model, POS_TEST, word_to_index, char_to_index_pos, max_word_size, "test5_40.pos")
+#
+# ner_trained_model = train_NER(word_to_index, NER_TRAIN, NER_DEV, vocab_size, embedding_matrix, char_to_index_ner, num_chars_ner, max_word_size, 20)
+# torch.save(ner_trained_model, "ner_trained_model_window_size_20.pt")
+# evaluate_ner_file_with_context(ner_trained_model, NER_TEST, word_to_index, char_to_index_ner, max_word_size, "test5_20.ner")
 
-pos_trained_model = train_POS(POS_TRAIN, POS_DEV, word_to_index, vocab_size, embedding_matrix, char_to_index_pos, num_chars_pos, max_word_size, 40)
-torch.save(pos_trained_model, "pos_trained_model_window_size_40.pt")
-evaluate_pos_file_with_context(pos_trained_model, POS_TEST, word_to_index, char_to_index_pos, max_word_size, "test4_40.pos")
-
-ner_trained_model = train_NER(word_to_index, NER_TRAIN, NER_DEV, vocab_size, embedding_matrix, char_to_index_ner, num_chars_ner, max_word_size, 20)
-torch.save(ner_trained_model, "ner_trained_model_window_size_20.pt")
-evaluate_ner_file_with_context(ner_trained_model, NER_TEST, word_to_index, char_to_index_ner, max_word_size, "test4_20.ner")
-
-pos_trained_model = train_POS(POS_TRAIN, POS_DEV, word_to_index, vocab_size, embedding_matrix, char_to_index_pos, num_chars_pos, max_word_size, 20)
-torch.save(pos_trained_model, "pos_trained_model_window_size_20.pt")
-evaluate_pos_file_with_context(pos_trained_model, POS_TEST, word_to_index, char_to_index_pos, max_word_size, "test4_20.pos")
+# pos_trained_model = train_POS(POS_TRAIN, POS_DEV, word_to_index, vocab_size, embedding_matrix, char_to_index_pos, num_chars_pos, max_word_size, 20)
+# torch.save(pos_trained_model, "pos_trained_model_window_size_20.pt")
+# evaluate_pos_file_with_context(pos_trained_model, POS_TEST, word_to_index, char_to_index_pos, max_word_size, "test5_20.pos")
 
