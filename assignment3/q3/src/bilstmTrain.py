@@ -64,7 +64,7 @@ def main():
     
     elif(option == 'd'):
         train_X, char_train_X, train_y, dev_X, char_dev_X, dev_y, word2idx, idx2word, char2idx, idx2char, tag2idx, idx2tag, vocab_size, char_vocab_size = CombinedParser.parse(train_path, dev_path)
-        words_and_tags_dict = {
+        words_and_tags_dict = { 
         'char2idx':char2idx,
         'idx2char': idx2char,
         'word2idx':word2idx,
