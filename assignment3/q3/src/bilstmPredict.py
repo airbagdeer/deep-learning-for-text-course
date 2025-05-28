@@ -4,6 +4,7 @@ import warnings
 warnings.filterwarnings("ignore")
 from torch.utils.data import DataLoader, TensorDataset
 from dataParser import DataParser, CharDataParser
+import argparse
 
 def predict(model_path, input_path, output_path, option):
     model = torch.load(model_path)
@@ -45,6 +46,21 @@ def format_tags(tags):
     return "\n".join(lines)
 
 
+def get_args_parser():
+    arg_parser = argparse.ArgumentParser(description="Run training and evaluation.")
+    # Positional arguments (must be given in order)
+    arg_parser.add_argument("option", help="Word representation option")
+    arg_parser.add_argument("model_path", help="Path to the model file")
+    arg_parser.add_argument("input_path", help="Path to the test file")
+
+    arg_parser.add_argument("--output_path", help="Path to the output file (optional)", default='./output.txt')
+
+    return arg_parser
+
 if __name__ == '__main__':
-    _, option, model_path, input_path, output_path, task = sys.argv
+
+
+    args = get_args_parser().parse_args()
+
+    option, model_path, input_path, output_path = args.option, args.model_path, args.input_path, args.output_path
     predict(model_path, input_path, output_path, option)

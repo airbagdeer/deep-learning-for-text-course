@@ -5,9 +5,15 @@ from bilstmRnnEmbeddingTagger import BiLstmCharLstmTrainer, CharLSTMCellWordBiLS
 from bilstmCharWordEmbeddingTagger import CharWordBiLSTMTagger, CharWordBilstmTrainer
 from bilestmSubWordEmbeddingTagger import PrefixSuffixBiLSTMTagger, PrefixSuffixTrainer
 from dataParser import DataParser, CharDataParser, CombinedParser, PrefixSuffixParser
+import argparse
 
 def main():
-    _, option, train_path, model_path, dev_path, task, accuracy_logging_file_path = sys.argv
+
+    parser = get_parser()
+    args = parser.parse_args()
+
+
+    option, train_path, model_path, dev_path, task, accuracy_logging_file_path =  args.option, args.train_path, args.model_path, args.dev_path, args.task, args.accuracy_logging_file_path
 
     # Initialize and train
     model, trainer  = None, None
@@ -129,6 +135,21 @@ def main():
         return
 
     torch.save(model, model_path)
+
+
+def get_parser():
+    arg_parser = argparse.ArgumentParser(description="Run training and evaluation.")
+    # Positional arguments (must be given in order)
+    arg_parser.add_argument("option", help="Word representation option")
+    arg_parser.add_argument("train_path", help="Path to the test file")
+    arg_parser.add_argument("model_path", help="Path to the test file")
+
+    arg_parser.add_argument("--dev_path", help="Path to the dev file (optional)", default=None)
+    arg_parser.add_argument("--task", help="Ner/Pos", default=None)
+    arg_parser.add_argument("--accuracy_logging_file_path", help="Path to logging file path (optional)", default=None)
+
+    return arg_parser
+
 
 # --- EXAMPLE USAGE ---
 if __name__ == "__main__":

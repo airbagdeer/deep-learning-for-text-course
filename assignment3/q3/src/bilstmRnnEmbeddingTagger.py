@@ -77,7 +77,7 @@ class BiLstmCharLstmTrainer:
         self.criterion = nn.CrossEntropyLoss(ignore_index=0)  # ignore padding index in labels
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
 
-    def train(self, X_train, y_train, X_dev=None, y_dev=None, tag2idx=None, task_type="ner",
+    def train(self, X_train, y_train, X_dev=None, y_dev=None, tag2idx=None, task_type=None,
               batch_size=32, epochs=5, accuracy_logging_file_path=None):
         train_dataset = TensorDataset(X_train, y_train)
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
@@ -110,7 +110,7 @@ class BiLstmCharLstmTrainer:
                             f.write(f"{seen_samples},{acc:.2f}\n")
             print(f"Epoch {epoch+1} Loss: {total_loss / len(train_loader):.4f}")
 
-    def evaluate(self, X_dev, y_dev, tag2idx=None, task_type="ner"):
+    def evaluate(self, X_dev, y_dev, tag2idx=None, task_type=None):
         self.model.eval()
         dev_dataset = TensorDataset(X_dev, y_dev)
         dev_loader = DataLoader(dev_dataset, batch_size=32)

@@ -96,7 +96,7 @@ class PrefixSuffixTrainer:
 
     def train(self, X_words, X_prefixes, X_suffixes, y,
               X_dev_words=None, X_dev_prefixes=None, X_dev_suffixes=None, y_dev=None,
-              tag2idx=None, task_type="ner",
+              tag2idx=None, task_type=None,
               batch_size=32, epochs=5, accuracy_logging_file_path=None):
 
         dataset = PrefixSuffixDataset(X_words, X_prefixes, X_suffixes, y)
@@ -137,7 +137,7 @@ class PrefixSuffixTrainer:
 
             print(f"Epoch {epoch+1} finished. Avg Loss: {total_loss / len(loader):.4f}")
 
-    def evaluate(self, X_words, X_prefixes, X_suffixes, y_true, tag2idx=None, task_type="ner"):
+    def evaluate(self, X_words, X_prefixes, X_suffixes, y_true, tag2idx=None, task_type=None):
         self.model.eval()
         dataset = PrefixSuffixDataset(X_words, X_prefixes, X_suffixes, y_true)
         loader = DataLoader(dataset, batch_size=32)
