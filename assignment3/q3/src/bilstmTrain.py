@@ -62,7 +62,7 @@ def main():
         trainer.train(train_X, train_y, dev_X, dev_y, tag2idx=tag2idx, task_type=task, epochs=epochs, batch_size=batch_size, accuracy_logging_file_path=accuracy_logging_file_path)
 
     
-    elif(option == 'c'):
+    elif(option == 'd'):
         train_X, char_train_X, train_y, dev_X, char_dev_X, dev_y, word2idx, idx2word, char2idx, idx2char, tag2idx, idx2tag, vocab_size, char_vocab_size = CombinedParser.parse(train_path, dev_path)
         words_and_tags_dict = {
         'char2idx':char2idx,
@@ -89,7 +89,7 @@ def main():
         trainer = CharWordBilstmTrainer(model, lr=lr)
         trainer.train(train_X, char_train_X, train_y, dev_X, char_dev_X, dev_y, tag2idx=tag2idx, task_type=task, epochs=epochs, batch_size=batch_size, accuracy_logging_file_path=accuracy_logging_file_path)
     
-    elif(option == 'd'):
+    elif(option == 'c'):
         (
         train_X, prefix_train_X, suffix_train_X, train_y,
         dev_X, prefix_dev_X, suffix_dev_X, dev_y,
