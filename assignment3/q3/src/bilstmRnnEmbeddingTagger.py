@@ -31,11 +31,21 @@ class CharLSTMCellWordBiLSTMCellTagger(nn.Module):
         char_ids_flat = char_ids.view(-1, max_word_len)  # [batch*seq_len, max_word_len]
         emb = self.char_embed(char_ids_flat)  # [batch*seq_len, max_word_len, char_embed_dim]
 
+        word_lengths = (char_ids != 0).sum(dim=-1)  # shape: [batch, seq_len]
+
         # Forward LSTMCell over characters
         h_fwd = torch.zeros(char_ids_flat.size(0), self.char_fwd_cell.hidden_size, device=device)
         c_fwd = torch.zeros_like(h_fwd)
         for t in range(max_word_len):
-            h_fwd, c_fwd = self.char_fwd_cell(emb[:, t, :], (h_fwd, c_fwd))
+            # Create a mask for the current timestep
+            mask_t = (t < word_lengths.view(-1)).float().unsqueeze(-1)  # shape: [batch * seq_len, 1]
+            
+            # Compute next hidden state
+            h_t, c_t = self.char_fwd_cell(emb[:, t, :], (h_fwd, c_fwd))
+
+            # Mask the update
+            h_fwd = h_t * mask_t + h_fwd * (1 - mask_t)
+            c_fwd = c_t * mask_t + c_fwd * (1 - mask_t)
 
         char_repr = h_fwd  # [batch*seq_len, char_hidden]
         word_repr = char_repr.view(batch_size, seq_len, -1)  # [batch, seq_len, char_hidden]
@@ -77,7 +87,6 @@ class BiLstmCharLstmTrainer:
 
         for epoch in range(epochs):
             total_loss = 0
-            last_acc = 0
             for xb, yb in train_loader:
                 xb, yb = xb.to(self.device), yb.to(self.device)
                 self.optimizer.zero_grad()
@@ -95,13 +104,11 @@ class BiLstmCharLstmTrainer:
                 seen_samples += xb.size(0)
                 if X_dev is not None and seen_samples % 500 < batch_size:
                     acc = self.evaluate(X_dev, y_dev, tag2idx=tag2idx, task_type=task_type)
-                    last_acc = acc
-                    print(f"  [After {seen_samples} samples] Dev Accuracy: {acc:.2f}%")
-
+                    print(f"Epoch {epoch+1}, after {seen_samples} samples - Dev Accuracy: {acc:.2f}%")
+                    if accuracy_logging_file_path:
+                        with open(accuracy_logging_file_path, "a") as f:
+                            f.write(f"{seen_samples},{acc:.2f}\n")
             print(f"Epoch {epoch+1} Loss: {total_loss / len(train_loader):.4f}")
-            if accuracy_logging_file_path:
-                with open(accuracy_logging_file_path, "a") as f:
-                    f.write(f"Epoch {epoch+1} Loss: {total_loss / len(train_loader):.4f}, Accuracy: {last_acc}\n")
 
     def evaluate(self, X_dev, y_dev, tag2idx=None, task_type="ner"):
         self.model.eval()
@@ -136,4 +143,5 @@ class BiLstmCharLstmTrainer:
         with torch.no_grad():
             logits = self.model(X)
             preds = torch.argmax(logits, dim=-1)
-        return preds.cpu()  
+        return preds.cpu()
+    

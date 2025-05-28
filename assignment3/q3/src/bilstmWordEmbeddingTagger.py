@@ -60,7 +60,6 @@ class BiLstmWordEmbeddingSequenceTrainer:
         seen_samples = 0
 
         for epoch in range(epochs):
-            last_acr = 0
             total_loss = 0
             for xb, yb in train_loader:
                 xb, yb = xb.to(self.device), yb.to(self.device)
@@ -78,12 +77,11 @@ class BiLstmWordEmbeddingSequenceTrainer:
                 seen_samples += xb.size(0)
                 if X_dev is not None and seen_samples % 500 < batch_size:
                     acc = self.evaluate(X_dev, y_dev, tag2idx=tag2idx, task_type=task_type)
-                    last_acr = acc
-                    print(f"  [After {seen_samples} samples] Dev Accuracy: {acc:.2f}%")
+                    print(f"Epoch {epoch+1}, after {seen_samples} samples - Dev Accuracy: {acc:.2f}%")
+                    if accuracy_logging_file_path:
+                        with open(accuracy_logging_file_path, "a") as f:
+                            f.write(f"{seen_samples},{acc:.2f}\n")
             print(f"Epoch {epoch+1} Loss: {total_loss / len(train_loader):.4f}")
-            if(accuracy_logging_file_path):
-                with open(accuracy_logging_file_path, "a") as file:
-                    file.write(f"Epoch {epoch+1} Loss: {total_loss / len(train_loader):.4f}, Accuracy: {last_acr}")
 
     def evaluate(self, X_dev, y_dev, tag2idx=None, task_type="ner"):
         self.model.eval()
