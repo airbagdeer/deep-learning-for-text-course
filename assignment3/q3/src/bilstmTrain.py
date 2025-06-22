@@ -15,7 +15,6 @@ def main():
 
     option, train_path, model_path, dev_path, task, accuracy_logging_file_path =  args.option, args.train_path, args.model_path, args.dev_path, args.task, args.accuracy_logging_file_path
 
-    # Initialize and train
     model, trainer  = None, None
     if(option == 'a'):
         train_X, train_y, dev_X, dev_y, tag2idx, idx2tag, word2idx, idx2word, vocab_size = DataParser.parse(train_path, dev_path)
@@ -102,7 +101,7 @@ def main():
 
         words_and_tags_dict = {
         'idx2word': idx2word,
-        'word2ix': word2idx,     
+        'word2idx': word2idx,     
         'tag2idx': tag2idx,
         'idx2tag': idx2tag,
         'prefix2idx': prefix2idx,
@@ -139,7 +138,6 @@ def main():
 
 def get_parser():
     arg_parser = argparse.ArgumentParser(description="Run training and evaluation.")
-    # Positional arguments (must be given in order)
     arg_parser.add_argument("option", help="Word representation option")
     arg_parser.add_argument("train_path", help="Path to the test file")
     arg_parser.add_argument("model_path", help="Path to the test file")
@@ -151,7 +149,6 @@ def get_parser():
     return arg_parser
 
 
-# --- EXAMPLE USAGE ---
 if __name__ == "__main__":
     main()
 

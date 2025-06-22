@@ -3,8 +3,6 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 
-# 1. Model definition
-
 class CharWordBiLSTMTagger(nn.Module):
     def __init__(self, 
                  word_vocab_size, word_embed_dim,
@@ -17,10 +15,8 @@ class CharWordBiLSTMTagger(nn.Module):
         self.word_embed = nn.Embedding(word_vocab_size, word_embed_dim, padding_idx=pad_idx)
         self.char_embed = nn.Embedding(char_vocab_size, char_embed_dim, padding_idx=pad_idx)
 
-        # Char-level forward LSTMCell
         self.char_fwd_cell = nn.LSTMCell(char_embed_dim, char_hidden_dim)
 
-        # Word-level BiLSTMCell
         self.word_fwd_cell = nn.LSTMCell(char_hidden_dim + word_embed_dim, word_hidden_dim)
         self.word_bwd_cell = nn.LSTMCell(char_hidden_dim + word_embed_dim, word_hidden_dim)
 
@@ -30,18 +26,13 @@ class CharWordBiLSTMTagger(nn.Module):
         torch.nn.init.xavier_uniform_(self.char_embed.weight)
 
     def forward(self, word_ids, char_ids):
-        """
-        word_ids: [batch, seq_len]
-        char_ids: [batch, seq_len, max_word_len]
-        """
         batch_size, seq_len, max_word_len = char_ids.size()
         device = char_ids.device
 
-        # Char-level embedding per word
-        char_ids_flat = char_ids.view(-1, max_word_len)  # [batch*seq_len, max_word_len]
-        emb = self.char_embed(char_ids_flat)  # [batch*seq_len, max_word_len, char_embed_dim]
+        char_ids_flat = char_ids.view(-1, max_word_len)
+        emb = self.char_embed(char_ids_flat)
 
-        word_lengths = (char_ids_flat != 0).sum(dim=-1)  # [batch*seq_len]
+        word_lengths = (char_ids_flat != 0).sum(dim=-1)
 
         h_fwd = torch.zeros(char_ids_flat.size(0), self.char_fwd_cell.hidden_size, device=device)
         c_fwd = torch.zeros_like(h_fwd)
@@ -50,15 +41,12 @@ class CharWordBiLSTMTagger(nn.Module):
             h_t, c_t = self.char_fwd_cell(emb[:, t, :], (h_fwd, c_fwd))
             h_fwd = h_t * mask_t + h_fwd * (1 - mask_t)
             c_fwd = c_t * mask_t + c_fwd * (1 - mask_t)
-        char_repr = h_fwd.view(batch_size, seq_len, -1)  # [batch, seq_len, char_hidden_dim]
+        char_repr = h_fwd.view(batch_size, seq_len, -1)
 
-        # Word embedding
-        word_emb = self.word_embed(word_ids)  # [batch, seq_len, word_embed_dim]
+        word_emb = self.word_embed(word_ids)
 
-        # Concatenate char & word embeddings
-        combined = torch.cat([word_emb, char_repr], dim=-1)  # [batch, seq_len, char_hidden_dim + word_embed_dim]
+        combined = torch.cat([word_emb, char_repr], dim=-1)
 
-        # Word-level BiLSTMCell forward
         h_fwd = torch.zeros(batch_size, self.word_fwd_cell.hidden_size, device=device)
         c_fwd = torch.zeros_like(h_fwd)
         fwd_outputs = []
@@ -66,7 +54,6 @@ class CharWordBiLSTMTagger(nn.Module):
             h_fwd, c_fwd = self.word_fwd_cell(combined[:, t, :], (h_fwd, c_fwd))
             fwd_outputs.append(h_fwd)
 
-        # Word-level BiLSTMCell backward
         h_bwd = torch.zeros(batch_size, self.word_bwd_cell.hidden_size, device=device)
         c_bwd = torch.zeros_like(h_bwd)
         bwd_outputs = []
@@ -77,14 +64,11 @@ class CharWordBiLSTMTagger(nn.Module):
         outputs = [torch.cat([f, b], dim=1) for f, b in zip(fwd_outputs, bwd_outputs)]
         outputs = torch.stack(outputs, dim=1)  # [batch, seq_len, word_hidden_dim*2]
 
-        logits = self.output_fc(outputs)  # [batch, seq_len, num_classes]
+        logits = self.output_fc(outputs)
         return logits
 
-
-# 2. Dataset class that returns word_ids, char_ids, and labels
-
 class WordCharTagDataset(Dataset):
-    def __init__(self, word_ids, char_ids, labels):
+    def __init__(self, word_ids, char_ids, labels=None):
         self.word_ids = word_ids
         self.char_ids = char_ids
         self.labels = labels
@@ -93,10 +77,10 @@ class WordCharTagDataset(Dataset):
         return len(self.word_ids)
 
     def __getitem__(self, idx):
-        return self.word_ids[idx], self.char_ids[idx], self.labels[idx]
-
-
-# 3. Trainer class
+        if(self.labels != None):
+            return self.word_ids[idx], self.char_ids[idx], self.labels[idx]
+        else:
+            return self.word_ids[idx], self.char_ids[idx]
 
 class CharWordBilstmTrainer:
     def __init__(self, model, lr=1e-3):
@@ -124,7 +108,7 @@ class CharWordBilstmTrainer:
                 y_batch = y_batch.to(self.device)
 
                 self.optimizer.zero_grad()
-                outputs = self.model(word_batch, char_batch)  # [batch, seq_len, num_classes]
+                outputs = self.model(word_batch, char_batch)
                 outputs = outputs.view(-1, outputs.shape[-1])
                 y_batch = y_batch.view(-1)
 
@@ -136,7 +120,6 @@ class CharWordBilstmTrainer:
                 total_loss += loss.item()
                 seen_samples += word_batch.size(0)
 
-                # Optional evaluation during training
                 if X_dev_words is not None and seen_samples % 500 < batch_size:
                     acc = self.evaluate(X_dev_words, X_dev_chars, y_dev, tag2idx=tag2idx, task_type=task_type)
                     print(f"Epoch {epoch+1}, after {seen_samples} samples - Dev Accuracy: {acc:.2f}%")

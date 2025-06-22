@@ -20,7 +20,6 @@ class DataParser:
 
         dev_data = DataParser._load_file(dev_path) if dev_path else None
 
-        # --- Vocab and Tag mappings ---
         word2idx = defaultdict(lambda: len(word2idx))
         word2idx["<PAD>"]
         word2idx["<UNK>"]
@@ -103,7 +102,7 @@ class DataParser:
                     y = [tag2idx[tag] for tag in tags]
                 else:
                     x = [word2idx.get(word, word2idx["<UNK>"]) for word in words]
-                    y = [tag2idx.get(tag, 0) for tag in tags]  # Default PAD for unknown tags
+                    y = [tag2idx.get(tag, 0) for tag in tags]
                 encoded_X.append(x)
                 encoded_y.append(y)
             return encoded_X, encoded_y
@@ -142,7 +141,6 @@ class CharDataParser:
         word2idx[UNK]
         tag2idx[PAD]
 
-        # Encode
         train_X, train_y = CharDataParser._encode(train_data, char2idx, word2idx, tag2idx, build_vocab=True)
 
         if dev_data is not None:
@@ -150,7 +148,6 @@ class CharDataParser:
         else:
             dev_X = dev_y = None
 
-        # Pad
         train_X_char, train_y = CharDataParser._pad_batch(train_X, train_y, char2idx[PAD], tag2idx[PAD])
         train_X_char = torch.tensor(train_X_char, dtype=torch.long)
         train_y = torch.tensor(train_y, dtype=torch.long)
@@ -280,7 +277,6 @@ class CharDataParser:
 
 
 class CombinedParser:
-
     @staticmethod
     def parse_test(test_path, char2idx, word2idx):
         train_x = DataParser.parse_test(test_path, word2idx)
@@ -293,9 +289,9 @@ class CombinedParser:
             train_X, train_y, dev_X, dev_y, tag2idx, idx2tag, word2idx, idx2word, vocab_size = DataParser.parse(train_path, dev_path)
             char_train_X, _, char_dev_X, _, _, _, char2idx, idx2char, char_vocab_size, _, _ = CharDataParser.parse(train_path, dev_path)
             return (
-                train_X,     # List[List[int]]
-                char_train_X,     # List[List[List[int]]]
-                train_y,           # List[List[int]]
+                train_X,
+                char_train_X,
+                train_y,
                 dev_X,
                 char_dev_X,
                 dev_y,
@@ -327,7 +323,6 @@ class PrefixSuffixParser:
             prefix_X.append(p)
             suffix_X.append(s)
 
-        # Padding
         test_X = DataParser._pad_batch(test_X, pad_value=word2idx["<PAD>"])
         prefix_X = DataParser._pad_batch(prefix_X, pad_value=prefix2idx["<PAD>"])
         suffix_X = DataParser._pad_batch(suffix_X, pad_value=suffix2idx["<PAD>"])
@@ -388,7 +383,6 @@ class PrefixSuffixParser:
         else:
             dev_X = dev_y = prefix_dev_X = suffix_dev_X = None
 
-        # --- Padding ---
         pad_word = word2idx["<PAD>"]
         pad_tag = tag2idx["<PAD>"]
         pad_prefix = prefix2idx["<PAD>"]
@@ -408,7 +402,6 @@ class PrefixSuffixParser:
                 pad_values=[pad_word, pad_tag, pad_prefix, pad_suffix]
             )
 
-        # --- Convert to Tensors ---
         train_X = torch.tensor(train_X, dtype=torch.long)
         train_y = torch.tensor(train_y, dtype=torch.long)
         prefix_train_X = torch.tensor(prefix_train_X, dtype=torch.long)
@@ -422,7 +415,6 @@ class PrefixSuffixParser:
         else:
             dev_X = dev_y = prefix_dev_X = suffix_dev_X = None
 
-        # --- Reverse mappings ---
         idx2tag = {v: k for k, v in tag2idx.items()}
         idx2word = {v: k for k, v in word2idx.items()}
         idx2prefix = {v: k for k, v in prefix2idx.items()}
@@ -437,35 +429,3 @@ class PrefixSuffixParser:
             dict(suffix2idx), idx2suffix,
             len(word2idx), len(prefix2idx), len(suffix2idx)
         )
-
-    
-if __name__ == '__main__':
-        # train_X, char_train_X, train_y, dev_X, char_dev_X, dev_y, word2idx, idx2word, char2idx, idx2char, tag2idx, idx2tag, vocab_size, char_vocab_size = CombinedParser.parse(
-        #     "/Users/itaygradenwits/Documents/biu/deep-nlp/deep-learning-for-text-course/assignment3/q3/data/pos/train",
-        #     "/Users/itaygradenwits/Documents/biu/deep-nlp/deep-learning-for-text-course/assignment3/q3/data/pos/dev")
-
-    # (
-    # train_X, prefix_train_X, suffix_train_X, train_y,
-    # dev_X, prefix_dev_X, suffix_dev_X, dev_y,
-    # tag2idx, idx2tag,
-    # word2idx, idx2word,
-    # prefix2idx, idx2prefix,
-    # suffix2idx, idx2suffix,
-    # vocab_size, prefix_vocab_size, suffix_vocab_size
-    # ) = PrefixSuffixParser.parse( "/Users/itaygradenwits/Documents/biu/deep-nlp/deep-learning-for-text-course/assignment3/q3/data/pos/train",  "/Users/itaygradenwits/Documents/biu/deep-nlp/deep-learning-for-text-course/assignment3/q3/data/pos/dev")
-
-    # print('hello from the other side')
-    # train_X_char, train_y, dev_X_char, dev_y, tag2idx, idx2tag, char2idx, idx2char = CharDataParser.parse(
-    #     "/Users/itaygradenwits/Documents/biu/deep-nlp/deep-learning-for-text-course/assignment3/q3/data/pos/train",
-    #     "/Users/itaygradenwits/Documents/biu/deep-nlp/deep-learning-for-text-course/assignment3/q3/data/pos/dev"
-    # )
-
-    # train_X, train_y, dev_X, dev_y, tag2idx, idx2tag, word2idx_orig, idx2word_orig, total2idx , idx2total ,vocabsize = CharDataParser.parse(
-    #     "/Users/itaygradenwits/Documents/biu/deep-nlp/deep-learning-for-text-course/assignment3/q3/data/pos/train",
-    #     "/Users/itaygradenwits/Documents/biu/deep-nlp/deep-learning-for-text-course/assignment3/q3/data/pos/dev"
-    # )
-
-    # train_X = DataParser.parse_test_pos(
-    #     "/Users/itaygradenwits/Documents/biu/deep-nlp/deep-learning-for-text-course/assignment3/q3/data/pos/train",
-    #     "/Users/itaygradenwits/Documents/biu/deep-nlp/deep-learning-for-text-course/assignment3/q3/data/pos/dev"
-    pass

@@ -3,9 +3,6 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, Dataset
 
-
-# 1. Model definition with summed embeddings
-
 class PrefixSuffixBiLSTMTagger(nn.Module):
     def __init__(self,
                  embed_dim,
@@ -31,21 +28,15 @@ class PrefixSuffixBiLSTMTagger(nn.Module):
         torch.nn.init.xavier_uniform_(self.suffix_embed.weight)
 
     def forward(self, word_ids, prefix_ids, suffix_ids):
-        """
-        word_ids, prefix_ids, suffix_ids: [batch, seq_len]
-        """
         batch_size, seq_len = word_ids.size()
         device = word_ids.device
 
-        # Embeddings
-        word_embs = self.word_embed(word_ids)      # [batch, seq_len, embed_dim]
-        prefix_embs = self.prefix_embed(prefix_ids) # [batch, seq_len, embed_dim]
-        suffix_embs = self.suffix_embed(suffix_ids) # [batch, seq_len, embed_dim]
+        word_embs = self.word_embed(word_ids)
+        prefix_embs = self.prefix_embed(prefix_ids)
+        suffix_embs = self.suffix_embed(suffix_ids)
 
-        # Sum embeddings elementwise
-        combined = word_embs + prefix_embs + suffix_embs  # [batch, seq_len, embed_dim]
+        combined = word_embs + prefix_embs + suffix_embs
 
-        # Forward LSTMCell
         h_fwd = torch.zeros(batch_size, self.fwd_cell.hidden_size, device=device)
         c_fwd = torch.zeros_like(h_fwd)
         fwd_outputs = []
@@ -53,7 +44,6 @@ class PrefixSuffixBiLSTMTagger(nn.Module):
             h_fwd, c_fwd = self.fwd_cell(combined[:, t, :], (h_fwd, c_fwd))
             fwd_outputs.append(h_fwd)
 
-        # Backward LSTMCell
         h_bwd = torch.zeros(batch_size, self.bwd_cell.hidden_size, device=device)
         c_bwd = torch.zeros_like(h_bwd)
         bwd_outputs = []
@@ -61,7 +51,6 @@ class PrefixSuffixBiLSTMTagger(nn.Module):
             h_bwd, c_bwd = self.bwd_cell(combined[:, t, :], (h_bwd, c_bwd))
             bwd_outputs.insert(0, h_bwd)
 
-        # Concatenate forward and backward outputs
         outputs = [torch.cat([f, b], dim=1) for f, b in zip(fwd_outputs, bwd_outputs)]
         outputs = torch.stack(outputs, dim=1)  # [batch, seq_len, 2 * hidden_dim]
 
@@ -69,10 +58,8 @@ class PrefixSuffixBiLSTMTagger(nn.Module):
         return logits
 
 
-# 2. Dataset class (same structure)
-
 class PrefixSuffixDataset(Dataset):
-    def __init__(self, word_ids, prefix_ids, suffix_ids, labels):
+    def __init__(self, word_ids, prefix_ids, suffix_ids, labels=None):
         self.word_ids = word_ids
         self.prefix_ids = prefix_ids
         self.suffix_ids = suffix_ids
@@ -82,10 +69,11 @@ class PrefixSuffixDataset(Dataset):
         return len(self.word_ids)
 
     def __getitem__(self, idx):
-        return (self.word_ids[idx], self.prefix_ids[idx], self.suffix_ids[idx], self.labels[idx])
+        if (self.labels != None):
+            return (self.word_ids[idx], self.prefix_ids[idx], self.suffix_ids[idx], self.labels[idx])
+        else:
+            return (self.word_ids[idx], self.prefix_ids[idx], self.suffix_ids[idx])
 
-
-# 3. Trainer class
 
 class PrefixSuffixTrainer:
     def __init__(self, model, lr=1e-3):
@@ -114,7 +102,7 @@ class PrefixSuffixTrainer:
                 y_batch = y_batch.to(self.device)
 
                 self.optimizer.zero_grad()
-                outputs = self.model(word_batch, prefix_batch, suffix_batch)  # [batch, seq_len, num_classes]
+                outputs = self.model(word_batch, prefix_batch, suffix_batch)
 
                 outputs = outputs.view(-1, outputs.shape[-1])
                 y_batch = y_batch.view(-1)
@@ -127,7 +115,6 @@ class PrefixSuffixTrainer:
                 total_loss += loss.item()
                 seen_samples += word_batch.size(0)
 
-                # Optional dev evaluation every ~500 samples
                 if X_dev_words is not None and seen_samples % 500 < batch_size:
                     acc = self.evaluate(X_dev_words, X_dev_prefixes, X_dev_suffixes, y_dev, tag2idx=tag2idx, task_type=task_type)
                     print(f"Epoch {epoch+1}, after {seen_samples} samples - Dev Accuracy: {acc:.2f}%")

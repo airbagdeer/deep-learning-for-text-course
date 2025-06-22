@@ -1,0 +1,16 @@
+{
+    "seq_len": 5,
+    "batch_size": 64,
+    "embedding_dim": 16,
+    "hidden_dim_1": 128,
+    "hidden_dim_2": 128,
+    "epochs": 50,
+    "pad_token": "<pad>",
+    "learning_rate": 0.001,
+    "corpus_path": "input.txt",
+    "sample_every_x_mintues": 1,
+    "sample_prefix": "the ",
+    "sample_length": 200,
+    "conv_out_channels": 64,
+    "kernel_size": 5
+  }
