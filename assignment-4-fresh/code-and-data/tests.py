@@ -2,6 +2,7 @@ import torch
 import attention
 import torch.nn.functional as F
 from transformer import TransformerLM
+from lm import batch_to_labeled_samples, compute_loss
 
 def test_attention_scores():
     # fill in values for the a, b and expected_output tensor.
@@ -79,6 +80,19 @@ def test_better_sample_continuation():
     generated_sampled = lm.better_sample_continuation(prefix, max_tokens, temperature, topK)
     assert len(generated_sampled) == max_tokens
 
+def test_batch_to_labeled_samples():
+    batch = torch.tensor([[1, 2, 3, 4, 5], [6, 7, 8, 9, 10]])
+    inputs, labels = batch_to_labeled_samples(batch)
+    assert torch.equal(inputs, torch.tensor([[1, 2, 3, 4], [6, 7, 8, 9]]))
+    assert torch.equal(labels, torch.tensor([[2, 3, 4, 5], [7, 8, 9, 10]]))
+
+def test_compute_loss():
+    logits = torch.randn(2, 4, 10) # batch, seq_len, vocab_size
+    gold_labels = torch.randint(0, 10, (2, 4)) # batch, seq_len
+    loss = compute_loss(logits, gold_labels)
+    assert isinstance(loss, torch.Tensor)
+    assert loss.dim() == 0
+
 if __name__ == '__main__':
     test_attention_scores()
     test_kqv()
@@ -87,3 +101,5 @@ if __name__ == '__main__':
     test_multi_head_attention_layer()
     test_transformer_lm()
     test_better_sample_continuation()
+    test_batch_to_labeled_samples()
+    test_compute_loss()
