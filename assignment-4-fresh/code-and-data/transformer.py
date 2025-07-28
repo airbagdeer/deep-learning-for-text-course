@@ -14,31 +14,29 @@ class TransformerDecoderBlock(nn.Module):
         self.with_residuals = with_residuals
 
     def forward(self, inputs):
+        x = inputs
         if self.with_residuals:
-            raise Exception("Not implemented")
-            # TODO add residuals support.
+            x = x + self.causal_attention(self.layer_norm_1(x))
+            x = x + self.mlp(self.layer_norm_2(x))
         else:
-            x = inputs
             x = self.layer_norm_1(x)
             x = self.causal_attention(x)
             x = self.layer_norm_2(x)
             x = self.mlp(x)
-            return x
+        return x
 
 class Embed(nn.Module):
     def __init__(self, vocab_size: int, embed_size: int, max_context_len):
         super().__init__()
-        self.token_embeddings = nn.Embedding(0, 0) # TODO set the right values
-        self.position_embeddings = nn.Embedding(0, 0) # TODO set the right values
+        self.token_embeddings = nn.Embedding(vocab_size, embed_size)
+        self.position_embeddings = nn.Embedding(max_context_len, embed_size)
         self.max_context_len = max_context_len
 
     def forward(self, x):
-        raise Exception("Not implemented") # TODO implement.
-        # x has the shape (b x n) where b is batch dimension and n is sequence length.
-        # each item is an int, indicating a vocabulary item.
-        # The output should be of shape (b x n x d), where d is the embedding dimension.
-        #tok_embeddings = 
-        #pos_embeddings = ...
+        b, n = x.size()
+        positions = torch.arange(0, n, dtype=torch.long, device=x.device)
+        tok_embeddings = self.token_embeddings(x)
+        pos_embeddings = self.position_embeddings(positions)
         return tok_embeddings + pos_embeddings
 
 
@@ -83,13 +81,11 @@ class TransformerLM(nn.Module):
                 torch.nn.init.zeros_(p.bias)
                 torch.nn.init.ones_(p.weight)
             elif isinstance(p, nn.Linear):
-                # TODO initialize p.weight and p.bias (if it is not None).
-                # You can look at initializers in torch.nn.init
-                pass
+                torch.nn.init.normal_(p.weight, mean=0.0, std=0.02)
+                if p.bias is not None:
+                    torch.nn.init.zeros_(p.bias)
             elif isinstance(p, nn.Embedding):
-                # TODO initialize p.weight and p.bias (if it is not None).
-                # You can look at initializers in torch.nn.init
-                pass
+                torch.nn.init.normal_(p.weight, mean=0.0, std=0.02)
 
 
     def sample_continuation(self, prefix: list[int], max_tokens_to_generate: int) -> list[int]:
@@ -109,9 +105,34 @@ class TransformerLM(nn.Module):
         return generated
 
     def better_sample_continuation(self, prefix: list[int], max_tokens_to_generate: int, temperature: float, topK: int) -> list[int]:
-        raise Exception("Not implemented")
-        # TODO implement this.
-        # Temperature should be the temperature in which you sample.
-        # TopK indicates that we don't sample from the entire distribution, but only from the top k scoring tokens
-        # for the given position.
+        feed_to_lm = prefix[:]
+        generated = []
+        with torch.no_grad():
+            while len(generated) < max_tokens_to_generate:
+                if len(feed_to_lm) > self.max_context_len:
+                    feed_to_lm = feed_to_lm[-self.max_context_len:]
+                logits = self(torch.tensor([feed_to_lm], dtype=torch.int32))
+                logits_for_last_token = logits[0][-1]
+
+                # Apply temperature
+                if temperature == 0.0:
+                    # If temperature is 0, do greedy sampling
+                    sampled_token = torch.argmax(logits_for_last_token).unsqueeze(0)
+                else:
+                    logits_for_last_token = logits_for_last_token / temperature
+
+                    # Apply top-k filtering
+                    if topK > 0:
+                        top_k_values, top_k_indices = torch.topk(logits_for_last_token, k=topK, dim=-1)
+                        # Create a mask for non-top-k elements
+                        mask = torch.full_like(logits_for_last_token, float('-inf'))
+                        mask[top_k_indices] = logits_for_last_token[top_k_indices]
+                        logits_for_last_token = mask
+
+                    distribution_for_last_token = F.softmax(logits_for_last_token, dim=-1)
+                    sampled_token = torch.multinomial(distribution_for_last_token, num_samples=1)
+
+                generated.append(sampled_token.item())
+                feed_to_lm.append(sampled_token.item())
+        return generated
 
