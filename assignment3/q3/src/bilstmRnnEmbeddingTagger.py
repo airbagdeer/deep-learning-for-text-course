@@ -10,10 +10,8 @@ class CharLSTMCellWordBiLSTMCellTagger(nn.Module):
         self.words_and_tags_dict = words_and_tags_dict
         self.char_embed = nn.Embedding(char_vocab_size, char_embed_dim, padding_idx=pad_idx)
 
-        # Character-level forward LSTMCell only
         self.char_fwd_cell = nn.LSTMCell(char_embed_dim, char_hidden_dim)
 
-        # Word-level BiLSTMCell
         self.word_fwd_cell = nn.LSTMCell(char_hidden_dim, word_hidden_dim)
         self.word_bwd_cell = nn.LSTMCell(char_hidden_dim, word_hidden_dim)
 
@@ -27,20 +25,24 @@ class CharLSTMCellWordBiLSTMCellTagger(nn.Module):
         batch_size, seq_len, max_word_len = char_ids.size()
         device = char_ids.device
 
-        # Flatten to process all words
-        char_ids_flat = char_ids.view(-1, max_word_len)  # [batch*seq_len, max_word_len]
-        emb = self.char_embed(char_ids_flat)  # [batch*seq_len, max_word_len, char_embed_dim]
+        char_ids_flat = char_ids.view(-1, max_word_len)
+        emb = self.char_embed(char_ids_flat)
 
-        # Forward LSTMCell over characters
+        word_lengths = (char_ids != 0).sum(dim=-1)
+
         h_fwd = torch.zeros(char_ids_flat.size(0), self.char_fwd_cell.hidden_size, device=device)
         c_fwd = torch.zeros_like(h_fwd)
         for t in range(max_word_len):
-            h_fwd, c_fwd = self.char_fwd_cell(emb[:, t, :], (h_fwd, c_fwd))
+            mask_t = (t < word_lengths.view(-1)).float().unsqueeze(-1)
+            
+            h_t, c_t = self.char_fwd_cell(emb[:, t, :], (h_fwd, c_fwd))
 
-        char_repr = h_fwd  # [batch*seq_len, char_hidden]
-        word_repr = char_repr.view(batch_size, seq_len, -1)  # [batch, seq_len, char_hidden]
+            h_fwd = h_t * mask_t + h_fwd * (1 - mask_t)
+            c_fwd = c_t * mask_t + c_fwd * (1 - mask_t)
 
-        # Word-level BiLSTMCell
+        char_repr = h_fwd
+        word_repr = char_repr.view(batch_size, seq_len, -1)
+
         h_fwd = torch.zeros(batch_size, self.word_fwd_cell.hidden_size, device=device)
         c_fwd = torch.zeros_like(h_fwd)
         fwd_outputs = []
@@ -56,9 +58,9 @@ class CharLSTMCellWordBiLSTMCellTagger(nn.Module):
             bwd_outputs.insert(0, h_bwd)
 
         outputs = [torch.cat([f, b], dim=1) for f, b in zip(fwd_outputs, bwd_outputs)]
-        outputs = torch.stack(outputs, dim=1)  # [batch, seq_len, word_hidden*2]
+        outputs = torch.stack(outputs, dim=1)
 
-        return self.output_fc(outputs)  # [batch, seq_len, num_classes]
+        return self.output_fc(outputs)
 
 class BiLstmCharLstmTrainer:
     def __init__(self, model, lr=1e-3):
@@ -67,7 +69,7 @@ class BiLstmCharLstmTrainer:
         self.criterion = nn.CrossEntropyLoss(ignore_index=0)  # ignore padding index in labels
         self.optimizer = optim.Adam(self.model.parameters(), lr=lr)
 
-    def train(self, X_train, y_train, X_dev=None, y_dev=None, tag2idx=None, task_type="ner",
+    def train(self, X_train, y_train, X_dev=None, y_dev=None, tag2idx=None, task_type=None,
               batch_size=32, epochs=5, accuracy_logging_file_path=None):
         train_dataset = TensorDataset(X_train, y_train)
         train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
@@ -77,14 +79,13 @@ class BiLstmCharLstmTrainer:
 
         for epoch in range(epochs):
             total_loss = 0
-            last_acc = 0
             for xb, yb in train_loader:
                 xb, yb = xb.to(self.device), yb.to(self.device)
                 self.optimizer.zero_grad()
 
-                outputs = self.model(xb)  # [batch, seq_len, num_classes]
-                outputs = outputs.view(-1, outputs.shape[-1])  # [batch*seq_len, num_classes]
-                yb = yb.view(-1)  # [batch*seq_len]
+                outputs = self.model(xb)
+                outputs = outputs.view(-1, outputs.shape[-1])
+                yb = yb.view(-1)
 
                 loss = self.criterion(outputs, yb)
                 loss.backward()
@@ -95,15 +96,13 @@ class BiLstmCharLstmTrainer:
                 seen_samples += xb.size(0)
                 if X_dev is not None and seen_samples % 500 < batch_size:
                     acc = self.evaluate(X_dev, y_dev, tag2idx=tag2idx, task_type=task_type)
-                    last_acc = acc
-                    print(f"  [After {seen_samples} samples] Dev Accuracy: {acc:.2f}%")
-
+                    print(f"Epoch {epoch+1}, after {seen_samples} samples - Dev Accuracy: {acc:.2f}%")
+                    if accuracy_logging_file_path:
+                        with open(accuracy_logging_file_path, "a") as f:
+                            f.write(f"{seen_samples},{acc:.2f}\n")
             print(f"Epoch {epoch+1} Loss: {total_loss / len(train_loader):.4f}")
-            if accuracy_logging_file_path:
-                with open(accuracy_logging_file_path, "a") as f:
-                    f.write(f"Epoch {epoch+1} Loss: {total_loss / len(train_loader):.4f}, Accuracy: {last_acc}\n")
 
-    def evaluate(self, X_dev, y_dev, tag2idx=None, task_type="ner"):
+    def evaluate(self, X_dev, y_dev, tag2idx=None, task_type=None):
         self.model.eval()
         dev_dataset = TensorDataset(X_dev, y_dev)
         dev_loader = DataLoader(dev_dataset, batch_size=32)
@@ -116,7 +115,7 @@ class BiLstmCharLstmTrainer:
             for xb, yb in dev_loader:
                 xb, yb = xb.to(self.device), yb.to(self.device)
                 logits = self.model(xb)
-                preds = torch.argmax(logits, dim=-1)  # [batch, seq_len]
+                preds = torch.argmax(logits, dim=-1)
 
                 if ignore_tag is not None:
                     mask = (yb != 0) & (yb != ignore_tag)
@@ -136,4 +135,5 @@ class BiLstmCharLstmTrainer:
         with torch.no_grad():
             logits = self.model(X)
             preds = torch.argmax(logits, dim=-1)
-        return preds.cpu()  
+        return preds.cpu()
+    
