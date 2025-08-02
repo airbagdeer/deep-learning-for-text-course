@@ -5,6 +5,8 @@ from torch import nn
 import torch.nn.functional as F
 import random
 import glob
+import json
+import os
 
 class CharTokenizer:
     def __init__(self):
@@ -42,13 +44,16 @@ class CharTokenizer:
         return "".join(strs)
 
     def save(self, path: str) -> None:
-        # TODO: save it.
-        ...
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(self.vocab, f)
 
     @staticmethod
     def load(path: str) -> CharTokenizer:
         tokenizer = CharTokenizer()
-        # TODO: load it.
+        with open(path, 'r', encoding='utf-8') as f:
+            vocab = json.load(f)
+        tokenizer.vocab = vocab
+        tokenizer.stoi = {s: i for i, s in enumerate(vocab)}
         return tokenizer
 
 class RandomOrderDataIterator:
@@ -64,19 +69,28 @@ class RandomOrderDataIterator:
             yield seq[idx:idx + self.desired_length]
 
 
-# This both creates the tokenizer and uses it to tokenize the data.
-# In a real system you'd like to split it to two separate functions.
-# Feel free to separate it to two functions also in this code.
 def load_data(path: str) -> [CharTokenizer, list[list[int]]]:
-    tokenizer = CharTokenizer()
-    for fname in glob.glob(f"{path}/*.txt"):
-        with open(fname) as fh:
-            text = fh.read()
-            tokenizer.train(text)
+    tokenizer_path = os.path.join(path, "tokenizer.json")
+
+    if os.path.exists(tokenizer_path):
+        print(f"Loading tokenizer from {tokenizer_path}")
+        tokenizer = CharTokenizer.load(tokenizer_path)
+    else:
+        print("Training tokenizer...")
+        tokenizer = CharTokenizer()
+        all_text_content = []
+        # Using utf-8 encoding for broader language support.
+        for fname in glob.glob(f"{path}/*.txt"):
+            with open(fname, 'r', encoding='utf-8') as fh:
+                all_text_content.append(fh.read())
+
+        tokenizer.train(all_text_content)
+        print(f"Saving tokenizer to {tokenizer_path}")
+        tokenizer.save(tokenizer_path)
 
     data: list[list[int]] = []
     for fname in glob.glob(f"{path}/*.txt"):
-        with open(fname) as fh:
+        with open(fname, 'r', encoding='utf-8') as fh:
             text = fh.read()
             data.append(tokenizer.tokenize(text))
 
@@ -92,4 +106,3 @@ def batch_items(data_iter: Iterator[list[int]], batch_size: int = 2) -> Iterator
             batch = []
     if len(batch) > 0:
         yield torch.tensor(batch, dtype=torch.long)
-

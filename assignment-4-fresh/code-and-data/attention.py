@@ -24,33 +24,46 @@ def create_causal_mask(embed_dim, n_heads, max_context_len):
     mask = torch.tril(torch.ones(max_context_len, max_context_len)).view(1, max_context_len, max_context_len)
     return mask
 
-def self_attention(v, A, mask = None):
+def self_attention(v, A, mask = None, return_attention=False):
     if mask is not None:
         A = A.masked_fill(mask == 0, float("-inf"))
     A = F.softmax(A, dim=-1)
     sa = torch.bmm(A, v)
+    if return_attention:
+        return sa, A
     return sa
 
 
-def self_attention_layer(x, kqv_matrix, attention_mask):
+def self_attention_layer(x, kqv_matrix, attention_mask, return_attention=False):
     k, q, v = kqv(x, kqv_matrix)
     att = attention_scores(k, q)
+    if return_attention:
+        sa, attention = self_attention(v, att, attention_mask, return_attention)
+        return sa, attention
     sa = self_attention(v, att, attention_mask)
     return sa
 
-def multi_head_attention_layer(x, kqv_matrices, mask):
+def multi_head_attention_layer(x, kqv_matrices, mask, return_attention=False):
     B, N, D = x.size()
     outputs = []
+    attentions = []
     for kqv_matrix in kqv_matrices:
-        sa = self_attention_layer(x, kqv_matrix, mask)
-        outputs.append(sa)
+        if return_attention:
+            sa, att = self_attention_layer(x, kqv_matrix, mask, return_attention)
+            outputs.append(sa)
+            attentions.append(att)
+        else:
+            sa = self_attention_layer(x, kqv_matrix, mask)
+            outputs.append(sa)
     sa = torch.cat(outputs, dim=-1)
     assert sa.size() == (B, N, D)
+    if return_attention:
+        return sa, attentions
     return sa
 
 
 class CausalSelfAttention(nn.Module):
-    def __init__(self, embed_dim, n_heads, max_context_len):
+    def __init__(self, embed_dim, n_heads, max_context_len, return_attention=False):
         super().__init__()
         assert embed_dim % n_heads == 0
         # the linear layers used for k, q, v computations:
@@ -63,10 +76,16 @@ class CausalSelfAttention(nn.Module):
         self.n_heads = n_heads
         self.embed_dim = embed_dim
         self.proj = nn.Linear(embed_dim, embed_dim)
+        self.return_attention = return_attention
 
     def forward(self, x):
         B, N, D = x.size()
         mask = self.mask[:, :N, :N]
-        sa = multi_head_attention_layer(x, self.kqv_matrices, mask)
-        sa = self.proj(sa)
-        return sa
+        if self.return_attention:
+            sa, attentions = multi_head_attention_layer(x, self.kqv_matrices, mask, self.return_attention)
+            sa = self.proj(sa)
+            return sa, attentions
+        else:
+            sa = multi_head_attention_layer(x, self.kqv_matrices, mask)
+            sa = self.proj(sa)
+            return sa

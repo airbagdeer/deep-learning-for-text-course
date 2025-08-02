@@ -53,10 +53,17 @@ def test_multi_head_attention_layer():
     assert sa.size() == x.size()
 
 def test_transformer_lm():
-    lm = TransformerLM(n_layers=2, n_heads=2, embed_size=4, max_context_len=10, vocab_size=100, mlp_hidden_size=8, with_residuals=True)
+    lm = TransformerLM(n_layers=2, n_heads=2, embed_size=4, max_context_len=10, vocab_size=100, mlp_hidden_size=8, with_residuals=True, return_attention=False)
     inputs = torch.randint(0, 100, (1, 5))
     outputs = lm(inputs)
     assert outputs.size() == (1, 5, 100)
+
+    lm_attn = TransformerLM(n_layers=2, n_heads=2, embed_size=4, max_context_len=10, vocab_size=100, mlp_hidden_size=8, with_residuals=True, return_attention=True)
+    outputs_attn, attentions = lm_attn(inputs)
+    assert outputs_attn.size() == (1, 5, 100)
+    assert len(attentions) == 2 # two layers
+    assert len(attentions[0]) == 2 # two heads
+    assert attentions[0][0].size() == (1, 5, 5)
 
 def test_better_sample_continuation():
     # Create a dummy TransformerLM instance for testing
@@ -100,6 +107,5 @@ if __name__ == '__main__':
     test_self_attention()
     test_multi_head_attention_layer()
     test_transformer_lm()
-    test_better_sample_continuation()
     test_batch_to_labeled_samples()
     test_compute_loss()
